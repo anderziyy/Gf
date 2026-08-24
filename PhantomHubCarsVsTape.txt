@@ -2526,7 +2526,6 @@ local autoUnlockWorldGeneration = 0
 local UNLOCK_WORLD_DATA = {
     [1] = {
         Points = {
-            CFrame.new(-60.9540558, 4.99802351, -61.0719566, 0.99459219, -1.19695301e-07, -0.103857428, 1.08950012e-07, 1, -1.09134838e-07, 0.103857428, 9.7229389e-08, 0.99459219),
             CFrame.new(-5.8981514, 3.79103994, -3849.56689, 0.999865949, -0.000713974645, 0.0163566992, 2.78702651e-11, 0.99904871, 0.0436087623, -0.0163722746, -0.0436029173, 0.998914778),
             CFrame.new(25.0000114, 2.99998474, -3837.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)
         },
@@ -2534,7 +2533,6 @@ local UNLOCK_WORLD_DATA = {
     },
     [2] = {
         Points = {
-            CFrame.new(1934.41211, 3.99804115, -29.6479759, 0.999995291, -3.00379749e-10, -0.00307239685, -1.28093355e-10, 1, -1.39458706e-07, 0.00307239685, 1.3945845e-07, 0.999995291),
             CFrame.new(2000.0426, 3.82125998, -3849.15283, 0.999298394, -0.00381938322, 0.0372572467, 7.1760986e-10, 0.994786501, 0.10197936, -0.037452504, -0.101907812, 0.99408859),
             CFrame.new(2025, 2.99998474, -3837.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)
         },
@@ -2542,7 +2540,6 @@ local UNLOCK_WORLD_DATA = {
     },
     [3] = {
         Points = {
-            CFrame.new(3926.22119, 3.99802589, -45.4176483, -0.0467724837, 1.298743e-09, 0.99890554, -8.53193924e-08, 1, -5.29513811e-09, -0.99890554, -8.54736797e-08, -0.0467724837),
             CFrame.new(3996.57886, 3.668998, -3847.63013, 0.981047809, 0.0215610396, -0.192562461, -9.57682045e-10, 0.993789792, 0.111273713, 0.193765789, -0.109164834, 0.97495532),
             CFrame.new(4025, 2.99998474, -3837.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)
         },
@@ -2958,6 +2955,11 @@ createSpecialButton("Auto Unlock World", "Farm", function()
         return
     end
 
+    pcall(function()
+        local Event = game:GetService("ReplicatedStorage").Remotes.RequestWorldTeleport
+        Event:InvokeServer(selectedWorld - 1)
+    end)
+
     task.spawn(function()
         local arrived = flyPlayerToUnlockWorldWithStops(data.Points, generation)
 
@@ -2984,25 +2986,21 @@ local trophyFarmGeneration = 0
 
 local TROPHY_FARM_DATA = {
     [1] = {
-        FirstPoint = CFrame.new(-60.9540558, 4.99802351, -61.0719566, 0.99459219, -1.19695301e-07, -0.103857428, 1.08950012e-07, 1, -1.09134838e-07, 0.103857428, 9.7229389e-08, 0.99459219),
         SecondPoint = CFrame.new(-5.8981514, 3.79103994, -3849.56689, 0.999865949, -0.000713974645, 0.0163566992, 2.78702651e-11, 0.99904871, 0.0436087623, -0.0163722746, -0.0436029173, 0.998914778),
         NormalPoint = CFrame.new(25.0000114, 2.99998474, -3837.5, 1, 0, 0, 0, 1, 0, 0, 0, 1),
         GamePassPoint = CFrame.new(25.0000114, 2.99998474, -3857.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)
     },
     [2] = {
-        FirstPoint = CFrame.new(1934.41211, 3.99804115, -29.6479759, 0.999995291, -3.00379749e-10, -0.00307239685, -1.28093355e-10, 1, -1.39458706e-07, 0.00307239685, 1.3945845e-07, 0.999995291),
         SecondPoint = CFrame.new(2000.0426, 3.82125998, -3849.15283, 0.999298394, -0.00381938322, 0.0372572467, 7.1760986e-10, 0.994786501, 0.10197936, -0.037452504, -0.101907812, 0.99408859),
         NormalPoint = CFrame.new(2025, 2.99998474, -3837.5, 1, 0, 0, 0, 1, 0, 0, 0, 1),
         GamePassPoint = CFrame.new(2025, 2.99998474, -3857.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)
     },
     [3] = {
-        FirstPoint = CFrame.new(3926.22119, 3.99802589, -45.4176483, -0.0467724837, 1.298743e-09, 0.99890554, -8.53193924e-08, 1, -5.29513811e-09, -0.99890554, -8.54736797e-08, -0.0467724837),
         SecondPoint = CFrame.new(3996.57886, 3.668998, -3847.63013, 0.981047809, 0.0215610396, -0.192562461, -9.57682045e-10, 0.993789792, 0.111273713, 0.193765789, -0.109164834, 0.97495532),
         NormalPoint = CFrame.new(4025, 2.99998474, -3837.5, 1, 0, 0, 0, 1, 0, 0, 0, 1),
         GamePassPoint = CFrame.new(4025, 2.99998474, -3857.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)
     },
     [4] = {
-        FirstPoint = CFrame.new(5919.16553, 3.99802446, -46.8759003, -1.9160625e-06, -3.25771576e-10, 1, 1.38174329e-07, 1, 3.26036337e-10, -1, 1.38174329e-07, -1.9160625e-06),
         SecondPoint = CFrame.new(5996.31494, 2.07003641, -3854.72876, 0.998738468, -0.0105254585, -0.0490984507, 1.4243684e-09, 0.977784634, -0.209612116, 0.050213974, 0.20934768, 0.976551116),
         NormalPoint = CFrame.new(6025, 2.99998474, -3837.5, 1, 0, 0, 0, 1, 0, 0, 0, 1),
         GamePassPoint = CFrame.new(6025, 2.99998474, -3857.5, 1, 0, 0, 0, 1, 0, 0, 0, 1)
@@ -3336,22 +3334,25 @@ createOption("Auto Farm Trophy", false, "Farm", function(state)
 
             lastWorld = world
             lastPart = partType
+
+            -- Teleporta para o mundo selecionado no começo de cada ciclo.
+            -- World 1 -> 1, World 2 -> 2, World 3 -> 3, World 4 -> 4.
+            pcall(function()
+                local Event = game:GetService("ReplicatedStorage").Remotes.RequestWorldTeleport
+                Event:InvokeServer(world)
+            end)
+
             automationFlyActive = true
             automationNoclipActive = true
 
-            local firstArrived = flyPlayerToTrophyPoint(data.FirstPoint, generation)
+            local firstArrived = flyPlayerToTrophyPoint(data.SecondPoint, generation)
             if not firstArrived or not trophyFarmActive or generation ~= trophyFarmGeneration then
                 break
             end
 
-            local secondArrived = flyPlayerToTrophyPoint(data.SecondPoint, generation)
+            local secondPoint = partType == "Game Pass Part" and data.GamePassPoint or data.NormalPoint
+            local secondArrived = flyPlayerToTrophyPoint(secondPoint, generation)
             if not secondArrived or not trophyFarmActive or generation ~= trophyFarmGeneration then
-                break
-            end
-
-            local thirdPoint = partType == "Game Pass Part" and data.GamePassPoint or data.NormalPoint
-            local thirdArrived = flyPlayerToTrophyPoint(thirdPoint, generation)
-            if not thirdArrived or not trophyFarmActive or generation ~= trophyFarmGeneration then
                 break
             end
 
