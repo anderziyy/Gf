@@ -27,7 +27,7 @@ local function rpx(value)
     return sign * math.max(1, math.floor(math.abs(value) * scale + 0.5))
 end
 
-local CORRECT_GAME_ID = 90086669327265
+local CORRECT_GAME_ID = 3678761576
 local currentGameId = game.PlaceId
 local gameIdCheckDone = false
 
@@ -241,7 +241,7 @@ Title.BackgroundTransparency = 1
 Title.Position = UDim2.new(0.02, rpx(0), 0, rpx(0))
 Title.Size = UDim2.new(1, rpx(0), 1, rpx(0))
 Title.Font = Enum.Font.GothamBold
-Title.Text = "Phantom Hub | +1 Cut Grass Adventure"
+Title.Text = "Phantom Hub | Entrenched"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.TextSize = rpx(22)
