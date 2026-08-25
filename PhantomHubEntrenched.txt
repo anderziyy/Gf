@@ -4898,6 +4898,9 @@ local function destroyEspEntry(targetPlayer)
     if entry.highlight then
         pcall(function() entry.highlight:Destroy() end)
     end
+    if entry.tracer then
+        pcall(function() entry.tracer:Destroy() end)
+    end
     if entry.container then
         pcall(function() entry.container:Destroy() end)
     end
@@ -4968,6 +4971,21 @@ local function createEspEntry(targetPlayer)
     highlight.FillTransparency = 0.72
     highlight.OutlineTransparency = 0
 
+    local tracer = Instance.new("Frame")
+    tracer.Name = "Tracer"
+    tracer.AnchorPoint = Vector2.new(0.5, 0.5)
+    tracer.BackgroundColor3 = espEnemyColor
+    tracer.BorderSizePixel = 0
+    tracer.Size = UDim2.fromOffset(0, 2)
+    tracer.Position = UDim2.fromOffset(0, 0)
+    tracer.Visible = false
+    tracer.Parent = screenGui
+    tracer.ZIndex = 9
+
+    local tracerCorner = Instance.new("UICorner")
+    tracerCorner.CornerRadius = UDim.new(0, 2)
+    tracerCorner.Parent = tracer
+
     espEntries[targetPlayer] = {
         container = container,
         box = box,
@@ -4975,7 +4993,8 @@ local function createEspEntry(targetPlayer)
         text = text,
         healthBackground = healthBackground,
         healthFill = healthFill,
-        highlight = highlight
+        highlight = highlight,
+        tracer = tracer
     }
 end
 
@@ -4994,7 +5013,46 @@ local function updateEspEntry(targetPlayer)
         entry.container.Visible = false
         entry.highlight.Enabled = false
         entry.highlight.Parent = nil
+        entry.tracer.Visible = false
         return
+    end
+
+    local enemyOnly = isEspSelected("Enemy ESP")
+    local enemyTarget = isEnemyPlayer(targetPlayer)
+    local passesFilter = not enemyOnly or enemyTarget
+
+    if isEspSelected("Tracer ESP") and enemyTarget then
+        local camera = workspace.CurrentCamera
+        local localCharacter = Player.Character
+        local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+        if camera and localRoot then
+            local startPoint, startOnScreen = camera:WorldToViewportPoint(localRoot.Position)
+            local endPoint, endOnScreen = camera:WorldToViewportPoint(root.Position)
+            if startPoint.Z > 0 and endPoint.Z > 0 and (startOnScreen or endOnScreen) then
+                local startVec = Vector2.new(startPoint.X, startPoint.Y)
+                local endVec = Vector2.new(endPoint.X, endPoint.Y)
+                local delta = endVec - startVec
+                local length = delta.Magnitude
+                if length > 1 then
+                    entry.tracer.BackgroundColor3 = espEnemyColor
+                    entry.tracer.Position = UDim2.fromOffset(
+                        math.floor((startVec.X + endVec.X) * 0.5 + 0.5),
+                        math.floor((startVec.Y + endVec.Y) * 0.5 + 0.5)
+                    )
+                    entry.tracer.Size = UDim2.fromOffset(math.floor(length + 0.5), math.max(1, rpx(2)))
+                    entry.tracer.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+                    entry.tracer.Visible = true
+                else
+                    entry.tracer.Visible = false
+                end
+            else
+                entry.tracer.Visible = false
+            end
+        else
+            entry.tracer.Visible = false
+        end
+    else
+        entry.tracer.Visible = false
     end
 
     if isEspSelected("Player ESP") then
@@ -5015,8 +5073,6 @@ local function updateEspEntry(targetPlayer)
         entry.highlight.Parent = nil
     end
 
-    local enemyOnly = isEspSelected("Enemy ESP")
-    local passesFilter = not enemyOnly or isEnemyPlayer(targetPlayer)
     local showName = passesFilter and isEspSelected("Name ESP")
     local showHealth = passesFilter and isEspSelected("Health ESP")
     local showDistance = passesFilter and isEspSelected("Distance ESP")
@@ -5100,6 +5156,12 @@ local function updateEspEntry(targetPlayer)
     end
     if showDistance then
         table.insert(infoParts, string.format("%dM", math.floor(distance + 0.5)))
+    end
+
+    local equippedTool = character:FindFirstChildOfClass("Tool")
+    local showWeapon = passesFilter and isEspSelected("Weapon ESP") and equippedTool ~= nil
+    if showWeapon then
+        table.insert(infoParts, equippedTool.Name)
     end
 
     entry.text.Visible = #infoParts > 0
@@ -5187,6 +5249,8 @@ createOption("Enable ESP", false, "Main", function(state)
 end)
 
 createESPMultiSelectOption("Main", "ESPSelections", "Select ESPS", {
+    "Tracer ESP",
+    "Weapon ESP",
     "Name ESP",
     "Health ESP",
     "Distance ESP",
