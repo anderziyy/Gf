@@ -544,8 +544,6 @@ ContentListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refres
 local tabs = {}
 local activeTab = "Main"
 local notificationTimers = {}
-local speedValue = 32
-local flySpeed = 32
 local connectionStorage = {}
 local optionElementsMap = {}
 local optionTabMap = {}
@@ -4858,21 +4856,6 @@ createSpecialButton("Auto Rejoin", "Config", function()
 end)
 
 createOption("Anti AFK", false, "Config")
-createOption("Anti Cheat", false, "Config")
-createOption("Infinite Jump", false, "Config")
-createOption("Enable Speed", false, "Config", function(state)
-    if state then
-        speedValue = optionStates["Speed"]
-    end
-end)
-createSlider("Speed", 1, 500, 32, "Config", function(value)
-    speedValue = value
-end)
-createOption("Fly", false, "Config")
-createSlider("Fly Speed", 1, 500, 32, "Config", function(value)
-    flySpeed = value
-end)
-createOption("Noclip", false, "Config")
 createOption("Enable Shift Lock", false, "Config", function(state)
     getgenv().ShiftLockEnabled = state
 end)
@@ -5047,145 +5030,10 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 local LP = game:GetService("Players").LocalPlayer
-local isFlyActive = false
-local bg, bv
-local noclipEnabled = false
-local noclipParts = {}
 local shiftLockScreenGui = nil
 local shiftLockIcon = nil
 local shiftLockActive = false
 local shiftLockConnection = nil
-
-UserInputService.JumpRequest:Connect(function()
-    local value = optionStates["Infinite Jump"]
-    if type(value) == "function" then value = value() end
-    if value then
-        local char = LP.Character
-        if char then
-            local humanoid = char:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    while task.wait(0.1) do
-        local speedEnabled = optionStates["Enable Speed"]
-        if type(speedEnabled) == "function" then speedEnabled = speedEnabled() end
-        local char = LP.Character
-        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.WalkSpeed = speedEnabled and speedValue or 28
-        end
-
-        if isFlyActive and bg and bv then
-            local cam = workspace.CurrentCamera
-            char = LP.Character
-            if cam and char and char:FindFirstChild("HumanoidRootPart") then
-                humanoid = char:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    local moveDir = humanoid.MoveDirection
-                    if moveDir.Magnitude > 0 then
-                        local camDir = cam.CFrame.LookVector
-                        local camRight = cam.CFrame.RightVector
-                        local flatLook = Vector3.new(camDir.X, 0, camDir.Z)
-                        if flatLook.Magnitude > 0.001 then
-                            flatLook = flatLook.Unit
-                        else
-                            flatLook = Vector3.new(cam.CFrame.UpVector.X, 0, cam.CFrame.UpVector.Z).Unit * -math.sign(camDir.Y)
-                        end
-                        local flatRight = Vector3.new(camRight.X, 0, camRight.Z)
-                        if flatRight.Magnitude > 0.001 then
-                            flatRight = flatRight.Unit
-                        else
-                            flatRight = Vector3.new(1, 0, 0)
-                        end
-                        local forwardInput = moveDir:Dot(flatLook)
-                        local rightInput = moveDir:Dot(flatRight)
-                        bv.Velocity = (camDir * forwardInput + camRight * rightInput) * flySpeed
-                    else
-                        bv.Velocity = Vector3.new(0, 0, 0)
-                    end
-                    bg.CFrame = cam.CFrame
-                end
-            end
-        end
-
-        if noclipEnabled then
-            char = LP.Character
-            if char then
-                for _, part in pairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if noclipParts[part] == nil then
-                            noclipParts[part] = part.CanCollide
-                        end
-                        part.CanCollide = false
-                    end
-                end
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    while task.wait(0.1) do
-        local flyEnabled = optionStates["Fly"]
-        if type(flyEnabled) == "function" then flyEnabled = flyEnabled() end
-        if flyEnabled then
-            isFlyActive = true
-            local char = LP.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                local root = char.HumanoidRootPart
-                if not root:FindFirstChild("FlyVel") then
-                    bv = Instance.new("BodyVelocity")
-                    bv.Name = "FlyVel"
-                    bv.Velocity = Vector3.new(0, 0, 0)
-                    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-                    bv.Parent = root
-                else
-                    bv = root:FindFirstChild("FlyVel")
-                end
-                if not root:FindFirstChild("FlyGyro") then
-                    bg = Instance.new("BodyGyro")
-                    bg.Name = "FlyGyro"
-                    bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-                    bg.CFrame = root.CFrame
-                    bg.Parent = root
-                else
-                    bg = root:FindFirstChild("FlyGyro")
-                end
-            end
-        else
-            isFlyActive = false
-            local char = LP.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                local root = char.HumanoidRootPart
-                local vel = root:FindFirstChild("FlyVel")
-                local gyro = root:FindFirstChild("FlyGyro")
-                if vel then vel:Destroy() end
-                if gyro then gyro:Destroy() end
-                bv = nil
-                bg = nil
-            end
-        end
-
-        local noclipVal = optionStates["Noclip"]
-        if type(noclipVal) == "function" then noclipVal = noclipVal() end
-        if noclipVal then
-            noclipEnabled = true
-        else
-            noclipEnabled = false
-            for part, canCollide in pairs(noclipParts) do
-                if part and part.Parent then
-                    part.CanCollide = canCollide
-                end
-            end
-            noclipParts = {}
-        end
-    end
-end)
 
 task.spawn(function()
     while task.wait(0.1) do
@@ -5199,21 +5047,6 @@ task.spawn(function()
         end
     end
 end)
-
-if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        local antiCheat = optionStates["Anti Cheat"]
-        if type(antiCheat) == "function" then antiCheat = antiCheat() end
-        if antiCheat then
-            local method = getnamecallmethod()
-            if method == "FireServer" and tostring(self) == "Cheat" then
-                return nil
-            end
-        end
-        return oldNamecall(self, ...)
-    end)
-end
 
 local function createShiftLockUI()
     if shiftLockScreenGui then return end
@@ -5309,10 +5142,6 @@ Player.CharacterAdded:Connect(function()
         shiftLockConnection:Disconnect()
         shiftLockConnection = nil
     end
-    isFlyActive = false
-    bg = nil
-    bv = nil
-    noclipParts = {}
 end)
 
 task.spawn(function()
@@ -5336,8 +5165,6 @@ local function stopAllScriptFeatures()
     autoBuyPowerActive = false
     autoPlayersActive = false
     autoPlayersSpecificActive = false
-    isFlyActive = false
-    noclipEnabled = false
     getgenv().ShiftLockEnabled = false
     if setESPEnabled then
         pcall(function() setESPEnabled(false) end)
@@ -5349,22 +5176,6 @@ local function stopAllScriptFeatures()
         end
     end
 
-    if bg then
-        pcall(function() bg:Destroy() end)
-        bg = nil
-    end
-
-    if bv then
-        pcall(function() bv:Destroy() end)
-        bv = nil
-    end
-
-    for part, canCollide in pairs(noclipParts) do
-        if part and part.Parent then
-            pcall(function() part.CanCollide = canCollide end)
-        end
-    end
-    noclipParts = {}
 
     if destroyShiftLockUI then
         destroyShiftLockUI()
