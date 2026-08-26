@@ -1309,16 +1309,21 @@ local function createNumberSlider(name, min, max, default, placeholderText, tabN
         applyValue(value, true)
     end
 
-    SliderBG.InputBegan:Connect(function(input)
+    local function beginSliderDrag(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             updateSlider(input)
         end
-    end)
+    end
+
+    SliderBG.InputBegan:Connect(beginSliderDrag)
+    Circle.InputBegan:Connect(beginSliderDrag)
 
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            updateSlider(input)
+        if dragging then
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                updateSlider(input)
+            end
         end
     end)
 
@@ -4779,10 +4784,12 @@ end
 local DEFAULT_ESP_TEXT_COLOR = Color3.fromRGB(255, 0, 0)
 local DEFAULT_ESP_ALLY_COLOR = Color3.fromRGB(0, 255, 0)
 local DEFAULT_ESP_ENEMY_COLOR = Color3.fromRGB(255, 0, 0)
+local DEFAULT_ESP_TRACER_COLOR = Color3.fromRGB(255, 0, 0)
 
 local espTextColor = hexToColor3(savedSettings["ESPTextColor"], DEFAULT_ESP_TEXT_COLOR)
 local espAllyColor = hexToColor3(savedSettings["ESPAllyColor"], DEFAULT_ESP_ALLY_COLOR)
 local espEnemyColor = hexToColor3(savedSettings["ESPEnemyColor"], DEFAULT_ESP_ENEMY_COLOR)
+local espTracerColor = hexToColor3(savedSettings["ESPTracerColor"], DEFAULT_ESP_TRACER_COLOR)
 
 if type(savedSettings["ESPTextColor"]) ~= "string" then
     savedSettings["ESPTextColor"] = color3ToHex(espTextColor)
@@ -4792,6 +4799,9 @@ if type(savedSettings["ESPAllyColor"]) ~= "string" then
 end
 if type(savedSettings["ESPEnemyColor"]) ~= "string" then
     savedSettings["ESPEnemyColor"] = color3ToHex(espEnemyColor)
+end
+if type(savedSettings["ESPTracerColor"]) ~= "string" then
+    savedSettings["ESPTracerColor"] = color3ToHex(espTracerColor)
 end
 saveSettings()
 
@@ -5163,7 +5173,7 @@ local function createEspEntry(targetPlayer)
     local tracer = Instance.new("Frame")
     tracer.Name = "Tracer"
     tracer.AnchorPoint = Vector2.new(0.5, 0.5)
-    tracer.BackgroundColor3 = espEnemyColor
+    tracer.BackgroundColor3 = espTracerColor
     tracer.BorderSizePixel = 0
     tracer.Size = UDim2.fromOffset(0, 2)
     tracer.Position = UDim2.fromOffset(0, 0)
@@ -5223,7 +5233,7 @@ local function updateEspEntry(targetPlayer)
                 local delta = endVec - startVec
                 local length = delta.Magnitude
                 if length > 1 then
-                    entry.tracer.BackgroundColor3 = espEnemyColor
+                    entry.tracer.BackgroundColor3 = espTracerColor
                     entry.tracer.Position = UDim2.fromOffset(
                         math.floor((startVec.X + endVec.X) * 0.5 + 0.5),
                         math.floor((startVec.Y + endVec.Y) * 0.5 + 0.5)
@@ -5449,6 +5459,9 @@ local aimbotTouchStartX = nil
 local aimbotMouseStartX = nil
 local aimbotSwipeThreshold = 45
 local aimbotRenderConnection = nil
+local aimbotFovEnabled = false
+local aimbotFovGui = nil
+local aimbotFovStroke = nil
 
 local function getAimbotAimPart(character)
     if not character or not aimbotTargetPart then
@@ -5665,6 +5678,80 @@ local function switchAimbotTarget(direction)
     end
 end
 
+local DEFAULT_AIMBOT_FOV_COLOR_NONE = Color3.fromRGB(255, 255, 255)
+local DEFAULT_AIMBOT_FOV_COLOR_ENEMY = Color3.fromRGB(255, 0, 0)
+local DEFAULT_AIMBOT_FOV_COLOR_ALLY = Color3.fromRGB(0, 255, 0)
+
+local function ensureAimbotFovGui()
+    if aimbotFovGui and aimbotFovGui.Parent then
+        return
+    end
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "PhantomHubAimbotFOV"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.DisplayOrder = 999996
+    screenGui.Parent = PlayerGui
+
+    local circle = Instance.new("Frame")
+    circle.Name = "FOVCircle"
+    circle.AnchorPoint = Vector2.new(0.5, 0.5)
+    circle.Position = UDim2.fromScale(0.5, 0.5)
+    circle.Size = UDim2.fromOffset(rpx(240), rpx(240))
+    circle.BackgroundTransparency = 1
+    circle.BorderSizePixel = 0
+    circle.Visible = false
+    circle.Parent = screenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = circle
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = DEFAULT_AIMBOT_FOV_COLOR_NONE
+    stroke.Thickness = math.max(1, rpx(1))
+    stroke.Transparency = 0
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = circle
+
+    aimbotFovGui = circle
+    aimbotFovStroke = stroke
+end
+
+local function setAimbotFovVisible(state)
+    aimbotFovEnabled = state
+    if state then
+        ensureAimbotFovGui()
+        aimbotFovGui.Visible = true
+    elseif aimbotFovGui then
+        aimbotFovGui.Visible = false
+    end
+end
+
+local function updateAimbotFovVisual()
+    if not aimbotFovEnabled then
+        if aimbotFovGui then
+            aimbotFovGui.Visible = false
+        end
+        return
+    end
+
+    ensureAimbotFovGui()
+    aimbotFovGui.Visible = true
+
+    local target = aimbotTargetPlayer
+    if target and isAimbotTargetValid(target) then
+        if isEnemyPlayer(target) then
+            aimbotFovStroke.Color = DEFAULT_AIMBOT_FOV_COLOR_ENEMY
+        else
+            aimbotFovStroke.Color = DEFAULT_AIMBOT_FOV_COLOR_ALLY
+        end
+    else
+        aimbotFovStroke.Color = DEFAULT_AIMBOT_FOV_COLOR_NONE
+    end
+end
+
 local function setAimbotEnabled(state)
     aimbotEnabled = state
     if state then
@@ -5674,11 +5761,14 @@ local function setAimbotEnabled(state)
     else
         aimbotTargetPlayer = nil
     end
+
+    updateAimbotFovVisual()
 end
 
 if not aimbotRenderConnection then
     aimbotRenderConnection = RunService.RenderStepped:Connect(function()
         if not aimbotEnabled or not aimbotTargetPart then
+            updateAimbotFovVisual()
             return
         end
 
@@ -5691,6 +5781,8 @@ if not aimbotRenderConnection then
         if camera and targetPart then
             camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position)
         end
+
+        updateAimbotFovVisual()
     end)
 end
 
@@ -5771,8 +5863,10 @@ end)
 
 createOption("Enable Max Distance", false, "Main", function(state)
     aimbotMaxDistanceEnabled = state
-    if aimbotEnabled and (not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer)) then
-        aimbotTargetPlayer = findBestAimbotTarget()
+    if aimbotEnabled then
+        if not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer) then
+            aimbotTargetPlayer = findBestAimbotTarget()
+        end
     end
 end)
 
@@ -5781,6 +5875,11 @@ createNumberSlider("Max Distance", 1, 5000, 250, "1 - 5000", "Main", function(va
     if aimbotEnabled and (not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer)) then
         aimbotTargetPlayer = findBestAimbotTarget()
     end
+end)
+
+createOption("Enable FOV", false, "Main", function(state)
+    setAimbotFovVisible(state)
+    updateAimbotFovVisual()
 end)
 
 
@@ -5827,6 +5926,13 @@ end)
 
 createColorOption("Main", "ESPEnemyColor", "Enemy Color", DEFAULT_ESP_ENEMY_COLOR, function(color)
     espEnemyColor = color
+    if espEnabled then
+        updateAllEsp()
+    end
+end)
+
+createColorOption("Main", "ESPTracerColor", "Tracer Color", DEFAULT_ESP_TRACER_COLOR, function(color)
+    espTracerColor = color
     if espEnabled then
         updateAllEsp()
     end
