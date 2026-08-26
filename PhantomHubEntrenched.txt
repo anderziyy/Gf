@@ -4657,114 +4657,6 @@ local lootItemIDs = {
 
 
 
--- Low Mode system
-local lowModeEnabled = false
-local lowModeOriginals = nil
-
-local function applyLowMode()
-    local Lighting = game:GetService("Lighting")
-    local Terrain = workspace:FindFirstChildOfClass("Terrain")
-
-    lowModeOriginals = {
-        Brightness = Lighting.Brightness,
-        GlobalShadows = Lighting.GlobalShadows,
-        FogEnd = Lighting.FogEnd,
-        FogStart = Lighting.FogStart,
-        FogColor = Lighting.FogColor,
-    }
-
-    local atmosphereOriginals = {}
-    for _, child in ipairs(Lighting:GetChildren()) do
-        if child:IsA("Atmosphere") or child:IsA("BlurEffect") or child:IsA("ColorCorrectionEffect") or child:IsA("SunRaysEffect") or child:IsA("BloomEffect") or child:IsA("DepthOfFieldEffect") then
-            atmosphereOriginals[child] = {instance = child, parent = child.Parent, enabled = child:IsA("Atmosphere") and true or child.Enabled}
-            if child:IsA("Atmosphere") then
-                child.Parent = nil
-            else
-                child.Enabled = false
-            end
-        end
-    end
-    lowModeOriginals.lightingChildren = atmosphereOriginals
-
-    Lighting.GlobalShadows = false
-    Lighting.FogEnd = 9e8
-    Lighting.FogStart = 9e8
-
-    if Terrain then
-        lowModeOriginals.TerrainWaterReflectance = Terrain.WaterReflectance
-        lowModeOriginals.TerrainWaterTransparency = Terrain.WaterTransparency
-        Terrain.WaterReflectance = 0
-        Terrain.WaterTransparency = 1
-    end
-
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        pcall(function()
-            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                obj.Enabled = false
-            end
-        end)
-    end
-end
-
-local function removeLowMode()
-    if not lowModeOriginals then return end
-    local Lighting = game:GetService("Lighting")
-    local Terrain = workspace:FindFirstChildOfClass("Terrain")
-
-    Lighting.GlobalShadows = lowModeOriginals.GlobalShadows
-    Lighting.FogEnd = lowModeOriginals.FogEnd
-    Lighting.FogStart = lowModeOriginals.FogStart
-    Lighting.FogColor = lowModeOriginals.FogColor
-
-    if lowModeOriginals.lightingChildren then
-        for _, data in pairs(lowModeOriginals.lightingChildren) do
-            if data.instance and data.instance.Parent == nil and data.instance:IsA("Atmosphere") then
-                data.instance.Parent = Lighting
-            elseif data.instance then
-                data.instance.Enabled = data.enabled
-            end
-        end
-    end
-
-    if Terrain then
-        if lowModeOriginals.TerrainWaterReflectance ~= nil then
-            Terrain.WaterReflectance = lowModeOriginals.TerrainWaterReflectance
-        end
-        if lowModeOriginals.TerrainWaterTransparency ~= nil then
-            Terrain.WaterTransparency = lowModeOriginals.TerrainWaterTransparency
-        end
-    end
-
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        pcall(function()
-            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                obj.Enabled = true
-            end
-        end)
-    end
-
-    lowModeOriginals = nil
-end
-
--- Brightness system
-local brightnessEnabled = false
-local brightnessValue = 10
-local brightnessOriginal = nil
-
-local function applyBrightness()
-    local Lighting = game:GetService("Lighting")
-    brightnessOriginal = Lighting.Brightness
-    Lighting.Brightness = brightnessValue
-end
-
-local function removeBrightness()
-    local Lighting = game:GetService("Lighting")
-    if brightnessOriginal ~= nil then
-        Lighting.Brightness = brightnessOriginal
-        brightnessOriginal = nil
-    end
-end
-
 -- ESP system
 local espEnabled = false
 local espSelection = {}
@@ -5287,18 +5179,15 @@ local function updateEspEntry(targetPlayer)
     if isEspSelected("Player ESP") then
         local localCharacter = Player.Character
         local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
-        local enemiesOnlyAura = isEspSelected("Enemy Aura Only")
-        if localRoot then
-            if not enemiesOnlyAura or isEnemyPlayer(targetPlayer) then
-                local auraColor = isEnemyPlayer(targetPlayer) and espEnemyColor or espAllyColor
-                entry.highlight.FillColor = auraColor
-                entry.highlight.OutlineColor = auraColor
-                entry.highlight.Parent = character
-                entry.highlight.Enabled = true
-            else
-                entry.highlight.Enabled = false
-                entry.highlight.Parent = nil
-            end
+        local enemyTarget = isEnemyPlayer(targetPlayer)
+        local enemyAuraOnly = isEspSelected("Enemy Aura")
+
+        if localRoot and (not enemyAuraOnly or enemyTarget) then
+            local auraColor = enemyTarget and espEnemyColor or espAllyColor
+            entry.highlight.FillColor = auraColor
+            entry.highlight.OutlineColor = auraColor
+            entry.highlight.Parent = character
+            entry.highlight.Enabled = true
         else
             entry.highlight.Enabled = false
             entry.highlight.Parent = nil
@@ -5496,13 +5385,16 @@ local aimbotTargetPlayer = nil
 local aimbotTouchStartX = nil
 local aimbotMouseStartX = nil
 local aimbotSwipeThreshold = 30
+local aimbotSwipeActive = false
+local aimbotLastSwipeX = nil
 local aimbotRenderConnection = nil
+local aimbotPredictionEnabled = false
+local aimbotPredictionTime = 0.14
 local aimbotFovEnabled = false
 local aimbotFovSize = 240
 local aimbotFovThickness = 1
 local aimbotFovGui = nil
 local aimbotFovStroke = nil
-local aimbotPredictionEnabled = false
 
 local function getAimbotAimPart(character)
     if not character or not aimbotTargetPart then
@@ -5581,15 +5473,32 @@ local function isAimbotTargetValid(targetPlayer)
     return true
 end
 
-local function getAimbotCandidateScore(targetPlayer)
-    local camera = workspace.CurrentCamera
+local function getAimbotTargetPosition(targetPlayer)
     local character = targetPlayer and targetPlayer.Character
     local targetPart = getAimbotAimPart(character)
-    if not camera or not targetPart then
+    if not targetPart then
+        return nil
+    end
+
+    local position = targetPart.Position
+    if aimbotPredictionEnabled then
+        local velocity = targetPart.AssemblyLinearVelocity
+        if velocity.Magnitude > 0.05 then
+            position += velocity * aimbotPredictionTime
+        end
+    end
+
+    return position
+end
+
+local function getAimbotCandidateScore(targetPlayer)
+    local camera = workspace.CurrentCamera
+    local targetPosition = getAimbotTargetPosition(targetPlayer)
+    if not camera or not targetPosition then
         return math.huge
     end
 
-    local viewportPoint, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+    local viewportPoint, onScreen = camera:WorldToViewportPoint(targetPosition)
     if not onScreen or viewportPoint.Z <= 0 then
         return math.huge
     end
@@ -5644,76 +5553,43 @@ local function switchAimbotTarget(direction)
     end
 
     local camera = workspace.CurrentCamera
-    if camera and #candidates > 1 then
-        local center = camera.ViewportSize * 0.5
-        local currentPart = aimbotTargetPlayer and getAimbotAimPart(aimbotTargetPlayer.Character)
-        local currentScreenX = center.X
-        if currentPart then
-            local vp = camera:WorldToViewportPoint(currentPart.Position)
-            currentScreenX = vp.X
-        end
-        local bestCandidate = nil
-        local bestDelta = math.huge
-        for _, candidate in ipairs(candidates) do
-            if candidate ~= aimbotTargetPlayer then
-                local part = getAimbotAimPart(candidate.Character)
-                if part then
-                    local vp = camera:WorldToViewportPoint(part.Position)
-                    local dx = vp.X - currentScreenX
-                    if direction == 1 and dx > 0 and dx < bestDelta then
-                        bestDelta = dx
-                        bestCandidate = candidate
-                    elseif direction == -1 and dx < 0 and math.abs(dx) < bestDelta then
-                        bestDelta = math.abs(dx)
-                        bestCandidate = candidate
-                    end
-                end
-            end
-        end
-        if bestCandidate then
-            aimbotTargetPlayer = bestCandidate
-            return
-        end
+    if not camera then
+        return
     end
 
-    local camera = workspace.CurrentCamera
-    local currentPart = aimbotTargetPlayer and getAimbotAimPart(aimbotTargetPlayer.Character)
-    local currentViewportX = nil
+    local currentPosition = getAimbotTargetPosition(aimbotTargetPlayer)
+    local currentViewportX
 
-    if camera and currentPart then
-        local point, onScreen = camera:WorldToViewportPoint(currentPart.Position)
+    if currentPosition then
+        local point, onScreen = camera:WorldToViewportPoint(currentPosition)
         if onScreen and point.Z > 0 then
             currentViewportX = point.X
         end
     end
 
+    local referenceX = currentViewportX or (camera.ViewportSize.X * 0.5)
     local bestTarget = nil
     local bestScore = math.huge
 
     for _, candidate in ipairs(candidates) do
         if candidate ~= aimbotTargetPlayer then
-            local part = getAimbotAimPart(candidate.Character)
-            if camera and part then
-                local point, onScreen = camera:WorldToViewportPoint(part.Position)
-                if onScreen and point.Z > 0 then
-                    if currentViewportX then
-                        local delta = point.X - currentViewportX
-                        if (direction > 0 and delta > 1) or (direction < 0 and delta < -1) then
-                            local score = math.abs(delta)
-                            if score < bestScore then
-                                bestScore = score
-                                bestTarget = candidate
-                            end
+            local position = getAimbotTargetPosition(candidate)
+            if position then
+                local point, onScreen = camera:WorldToViewportPoint(position)
+                if point.Z > 0 then
+                    local delta = point.X - referenceX
+                    local isInDirection = direction > 0 and delta > 2 or direction < 0 and delta < -2
+
+                    if isInDirection then
+                        local verticalOffset = math.abs(point.Y - (camera.ViewportSize.Y * 0.5))
+                        local score = math.abs(delta) + (verticalOffset * 0.12)
+                        if not onScreen then
+                            score += camera.ViewportSize.X * 0.15
                         end
-                    else
-                        local centerX = camera.ViewportSize.X * 0.5
-                        local delta = point.X - centerX
-                        if (direction > 0 and delta > 0) or (direction < 0 and delta < 0) then
-                            local score = math.abs(delta)
-                            if score < bestScore then
-                                bestScore = score
-                                bestTarget = candidate
-                            end
+
+                        if score < bestScore then
+                            bestScore = score
+                            bestTarget = candidate
                         end
                     end
                 end
@@ -5723,32 +5599,36 @@ local function switchAimbotTarget(direction)
 
     if bestTarget then
         aimbotTargetPlayer = bestTarget
-    else
-        table.sort(candidates, function(a, b)
-            return getAimbotCandidateScore(a) < getAimbotCandidateScore(b)
-        end)
+        return
+    end
 
-        if #candidates > 0 then
-            local currentIndex = 0
-            for index, candidate in ipairs(candidates) do
-                if candidate == aimbotTargetPlayer then
-                    currentIndex = index
-                    break
-                end
-            end
-
-            if currentIndex == 0 then
-                aimbotTargetPlayer = candidates[1]
-            else
-                local nextIndex = currentIndex + direction
-                if nextIndex < 1 then
-                    nextIndex = #candidates
-                elseif nextIndex > #candidates then
-                    nextIndex = 1
-                end
-                aimbotTargetPlayer = candidates[nextIndex]
-            end
+    table.sort(candidates, function(a, b)
+        local scoreA = getAimbotCandidateScore(a)
+        local scoreB = getAimbotCandidateScore(b)
+        if scoreA == scoreB then
+            return a.UserId < b.UserId
         end
+        return scoreA < scoreB
+    end)
+
+    local currentIndex = 0
+    for index, candidate in ipairs(candidates) do
+        if candidate == aimbotTargetPlayer then
+            currentIndex = index
+            break
+        end
+    end
+
+    if currentIndex == 0 then
+        aimbotTargetPlayer = candidates[1]
+    else
+        local nextIndex = currentIndex + direction
+        if nextIndex < 1 then
+            nextIndex = #candidates
+        elseif nextIndex > #candidates then
+            nextIndex = 1
+        end
+        aimbotTargetPlayer = candidates[nextIndex]
     end
 end
 
@@ -5862,21 +5742,10 @@ if not aimbotRenderConnection then
             aimbotTargetPlayer = findBestAimbotTarget()
         end
 
-        local targetPart = aimbotTargetPlayer and getAimbotAimPart(aimbotTargetPlayer.Character)
+        local targetPosition = aimbotTargetPlayer and getAimbotTargetPosition(aimbotTargetPlayer)
         local camera = workspace.CurrentCamera
-        if camera and targetPart then
-            local aimPosition = targetPart.Position
-            if aimbotPredictionEnabled then
-                local targetCharacter = aimbotTargetPlayer.Character
-                local rootPart = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
-                if rootPart then
-                    local velocity = rootPart.AssemblyLinearVelocity
-                    local dist = (camera.CFrame.Position - aimPosition).Magnitude
-                    local travelTime = math.clamp(dist / 200, 0, 0.5)
-                    aimPosition = aimPosition + velocity * travelTime
-                end
-            end
-            camera.CFrame = CFrame.lookAt(camera.CFrame.Position, aimPosition)
+        if camera and targetPosition then
+            camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPosition)
         end
 
         updateAimbotFovVisual()
@@ -5890,35 +5759,47 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     if input.UserInputType == Enum.UserInputType.Touch then
         aimbotTouchStartX = input.Position.X
+        aimbotLastSwipeX = input.Position.X
+        aimbotSwipeActive = true
     elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
         aimbotMouseStartX = input.Position.X
+        aimbotLastSwipeX = input.Position.X
+        aimbotSwipeActive = true
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input, gameProcessed)
+    if not aimbotEnabled or gameProcessed or MainFrame.Visible or not aimbotSwipeActive then
+        return
+    end
+
+    if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseMovement then
+        return
+    end
+
+    local currentX = input.Position.X
+    if not aimbotLastSwipeX then
+        aimbotLastSwipeX = currentX
+        return
+    end
+
+    local deltaX = currentX - aimbotLastSwipeX
+    if math.abs(deltaX) >= aimbotSwipeThreshold then
+        local direction = deltaX > 0 and 1 or -1
+        switchAimbotTarget(direction)
+        aimbotLastSwipeX = currentX
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
-    if not aimbotEnabled or MainFrame.Visible then
-        aimbotTouchStartX = nil
-        aimbotMouseStartX = nil
+    if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then
         return
     end
 
-    local startX = nil
-    if input.UserInputType == Enum.UserInputType.Touch then
-        startX = aimbotTouchStartX
-        aimbotTouchStartX = nil
-    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-        startX = aimbotMouseStartX
-        aimbotMouseStartX = nil
-    end
-
-    if not startX then
-        return
-    end
-
-    local deltaX = input.Position.X - startX
-    if math.abs(deltaX) >= aimbotSwipeThreshold then
-        switchAimbotTarget(deltaX > 0 and 1 or -1)
-    end
+    aimbotSwipeActive = false
+    aimbotTouchStartX = nil
+    aimbotMouseStartX = nil
+    aimbotLastSwipeX = nil
 end)
 
 createCategory("Main", "Aimbot", "129360992122557")
@@ -5946,6 +5827,9 @@ end
 
 createOption("Prediction", false, "Main", function(state)
     aimbotPredictionEnabled = state
+    if aimbotEnabled and (not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer)) then
+        aimbotTargetPlayer = findBestAimbotTarget()
+    end
 end)
 
 createOption("Enemy Only", false, "Main", function(state)
@@ -6008,7 +5892,7 @@ createESPMultiSelectOption("Main", "ESPSelections", "Select ESPS", {
     "Box ESP",
     "Player ESP",
     "Enemy ESP",
-    "Enemy Aura Only"
+    "Enemy Aura"
 }, function(selected)
     espSelection = selected or {}
     if espEnabled then
@@ -6064,32 +5948,6 @@ end)
 createOption("Anti AFK", false, "Config")
 createOption("Enable Shift Lock", false, "Config", function(state)
     getgenv().ShiftLockEnabled = state
-end)
-
-createOption("Low Mode", false, "Config", function(state)
-    lowModeEnabled = state
-    if state then
-        applyLowMode()
-    else
-        removeLowMode()
-    end
-end)
-
-createOption("Enable Brightness", false, "Config", function(state)
-    brightnessEnabled = state
-    if state then
-        applyBrightness()
-    else
-        removeBrightness()
-    end
-end)
-
-createNumberSlider("Brightness", 1, 150, 10, "1 - 150", "Config", function(value)
-    brightnessValue = math.clamp(tonumber(value) or 10, 1, 150)
-    if brightnessEnabled then
-        local Lighting = game:GetService("Lighting")
-        Lighting.Brightness = brightnessValue
-    end
 end)
 
 createInfoBox("By: Cleiton10HDx", "Script created by this user.", "Credits", false)
