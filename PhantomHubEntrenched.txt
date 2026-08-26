@@ -5158,10 +5158,55 @@ local function updateEspEntry(targetPlayer)
         table.insert(infoParts, string.format("%dM", math.floor(distance + 0.5)))
     end
 
-    local equippedTool = character:FindFirstChildOfClass("Tool")
-    local showWeapon = passesFilter and isEspSelected("Weapon ESP") and equippedTool ~= nil
-    if showWeapon then
-        table.insert(infoParts, equippedTool.Name)
+    local function getRocketPlaceHeldItemName(playerName)
+        local rocketPlace = workspace:FindFirstChild("Rocket Place")
+        if not rocketPlace then
+            return nil
+        end
+
+        local playerModel = rocketPlace:FindFirstChild(playerName)
+        if not playerModel then
+            return nil
+        end
+
+        local heldTool = nil
+        for _, child in ipairs(playerModel:GetChildren()) do
+            if child:IsA("Tool") then
+                heldTool = child
+                break
+            end
+        end
+
+        if not heldTool then
+            return nil
+        end
+
+        -- Prefer the text exposed by the held item when the game stores its display name
+        -- in a Text/TextLabel-like descendant; otherwise use the Tool's name.
+        local displayName = nil
+        for _, descendant in ipairs(heldTool:GetDescendants()) do
+            if descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox") then
+                if descendant.Text and descendant.Text ~= "" then
+                    displayName = descendant.Text
+                    break
+                end
+            elseif descendant:IsA("StringValue") and descendant.Name:lower() == "text" then
+                if descendant.Value and descendant.Value ~= "" then
+                    displayName = descendant.Value
+                    break
+                end
+            end
+        end
+
+        return displayName or heldTool.Name
+    end
+
+    local weaponName = nil
+    if passesFilter and isEspSelected("Weapon ESP") then
+        weaponName = getRocketPlaceHeldItemName(targetPlayer.Name)
+    end
+    if weaponName then
+        table.insert(infoParts, weaponName)
     end
 
     entry.text.Visible = #infoParts > 0
