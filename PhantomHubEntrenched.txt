@@ -1164,6 +1164,195 @@ local function createSlider(name, min, max, default, tabName, callback)
     registerElement(tabName, Container, name)
 end
 
+local function createNumberSlider(name, min, max, default, placeholderText, tabName, callback)
+    if not tabs[tabName] then
+        tabs[tabName] = { button = nil, elements = {} }
+    end
+
+    optionCounter = optionCounter + 1
+
+    createOptionState(name, math.clamp(tonumber(default) or min, min, max))
+    local currentVal = math.clamp(tonumber(optionStates[name]) or min, min, max)
+    optionStates[name] = currentVal
+    savedSettings[name] = currentVal
+    saveSettings()
+
+    local Container = Instance.new("Frame")
+    Container.Size = getOptionFrameSize()
+    Container.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    Container.Parent = MainContent
+    Container.LayoutOrder = optionCounter
+    Container.ZIndex = 999999
+    Container.Visible = (tabName == activeTab)
+
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, rpx(0))
+    UICorner.Parent = Container
+
+    local ContainerStroke = Instance.new("UIStroke")
+    ContainerStroke.Color = Color3.fromRGB(60, 60, 60)
+    ContainerStroke.Thickness = 0
+    ContainerStroke.Parent = Container
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.55, 0, 0.42, 0)
+    Label.Position = UDim2.new(0.05, 0, 0.02, 0)
+    Label.Text = name .. ": " .. tostring(currentVal)
+    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Label.BackgroundTransparency = 1
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Font = Enum.Font.SourceSans
+    Label.TextSize = rpx(23)
+    Label.Parent = Container
+    Label.ZIndex = 999999
+
+    local ValueBox = Instance.new("TextBox")
+    ValueBox.Name = "ValueBox"
+    ValueBox.Size = UDim2.new(0.28, 0, 0.34, 0)
+    ValueBox.Position = UDim2.new(0.67, 0, 0.07, 0)
+    ValueBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    ValueBox.BorderSizePixel = 0
+    ValueBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ValueBox.PlaceholderColor3 = Color3.fromRGB(160, 160, 160)
+    ValueBox.PlaceholderText = placeholderText or "1 - 5000"
+    ValueBox.Text = tostring(currentVal)
+    ValueBox.TextSize = rpx(16)
+    ValueBox.Font = Enum.Font.SourceSansBold
+    ValueBox.ClearTextOnFocus = false
+    ValueBox.MultiLine = false
+    ValueBox.Parent = Container
+    ValueBox.ZIndex = 1000000
+
+    local ValueCorner = Instance.new("UICorner")
+    ValueCorner.CornerRadius = UDim.new(0, rpx(0))
+    ValueCorner.Parent = ValueBox
+
+    local ValueStroke = Instance.new("UIStroke")
+    ValueStroke.Color = Color3.fromRGB(70, 70, 70)
+    ValueStroke.Thickness = 1
+    ValueStroke.Parent = ValueBox
+
+    local SliderBG = Instance.new("TextButton")
+    SliderBG.Size = UDim2.new(0.9, 0, 0.11, 0)
+    SliderBG.Position = UDim2.new(0.05, 0, 0.55, 0)
+    SliderBG.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    SliderBG.Text = ""
+    SliderBG.Parent = Container
+    SliderBG.AutoButtonColor = false
+    SliderBG.ZIndex = 999999
+
+    local SliderCorner = Instance.new("UICorner")
+    SliderCorner.CornerRadius = UDim.new(0, rpx(0))
+    SliderCorner.Parent = SliderBG
+
+    local function valueToScale(value)
+        return math.clamp((value - min) / (max - min), 0, 1)
+    end
+
+    local function applyValue(value, updateTextBox)
+        value = math.clamp(math.floor(tonumber(value) or min), min, max)
+        optionStates[name] = value
+        setOptionState(name, value)
+
+        local scale = valueToScale(value)
+        SliderFill.Size = UDim2.new(scale, 0, 1, 0)
+        Circle.Position = UDim2.new(scale, 0, 0.5, 0)
+        Label.Text = name .. ": " .. tostring(value)
+        if updateTextBox and ValueBox.Text ~= tostring(value) then
+            ValueBox.Text = tostring(value)
+        end
+
+        if callback then
+            callback(value)
+        end
+    end
+
+    local initialScale = valueToScale(currentVal)
+    local SliderFill = Instance.new("Frame")
+    SliderFill.Name = "SliderFill"
+    SliderFill.Size = UDim2.new(initialScale, 0, 1, 0)
+    SliderFill.BackgroundColor3 = Color3.fromRGB(100, 150, 200)
+    SliderFill.BorderSizePixel = 0
+    SliderFill.Parent = SliderBG
+    SliderFill.ZIndex = 999999
+
+    local FillCorner = Instance.new("UICorner")
+    FillCorner.CornerRadius = UDim.new(0, rpx(0))
+    FillCorner.Parent = SliderFill
+
+    local Circle = Instance.new("Frame")
+    Circle.Name = "SliderCircle"
+    Circle.AnchorPoint = Vector2.new(0.5, 0.5)
+    Circle.Size = UDim2.new(0, rpx(14), 0, rpx(14))
+    Circle.Position = UDim2.new(initialScale, 0, 0.5, 0)
+    Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Circle.BorderSizePixel = 0
+    Circle.Parent = SliderBG
+    Circle.ZIndex = 1000000
+
+    local CircleCorner = Instance.new("UICorner")
+    CircleCorner.CornerRadius = UDim.new(0, rpx(0))
+    CircleCorner.Parent = Circle
+
+    if callback then
+        task.spawn(function() callback(currentVal) end)
+    end
+
+    local dragging = false
+    local function updateSlider(input)
+        if SliderBG.AbsoluteSize.X <= 0 then
+            return
+        end
+        local relativeX = math.clamp(input.Position.X - SliderBG.AbsolutePosition.X, 0, SliderBG.AbsoluteSize.X)
+        local scale = relativeX / SliderBG.AbsoluteSize.X
+        local value = math.floor(min + ((max - min) * scale) + 0.5)
+        applyValue(value, true)
+    end
+
+    SliderBG.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            updateSlider(input)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateSlider(input)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    local editing = false
+    ValueBox.Focused:Connect(function()
+        editing = true
+    end)
+
+    ValueBox:GetPropertyChangedSignal("Text"):Connect(function()
+        if not editing then
+            return
+        end
+        local digits = ValueBox.Text:gsub("[^%d]", "")
+        if digits ~= ValueBox.Text then
+            ValueBox.Text = digits
+        end
+    end)
+
+    ValueBox.FocusLost:Connect(function()
+        editing = false
+        local digits = ValueBox.Text:gsub("[^%d]", "")
+        local numericValue = tonumber(digits) or currentVal
+        applyValue(numericValue, true)
+    end)
+
+    registerElement(tabName, Container, name)
+end
+
 local function createInfoBox(title, desc, tabName, isButton, linkToCopy)
     if not tabs[tabName] then
         tabs[tabName] = { button = nil, elements = {} }
@@ -1560,11 +1749,11 @@ end
 
 
 
-local function createSingleSelectOption(tabName, stateName, labelText, options, defaultOption, callback)
+local function createSingleSelectOption(tabName, stateName, labelText, options, defaultOption, callback, allowNone)
     optionCounter = optionCounter + 1
 
     local selectedOption = savedSettings[stateName]
-    local validDefault = defaultOption or options[1]
+    local validDefault = allowNone and defaultOption or (defaultOption or options[1])
     local validSelection = false
 
     for _, optionName in ipairs(options) do
@@ -5248,7 +5437,353 @@ game:GetService("Players").PlayerRemoving:Connect(function(targetPlayer)
     destroyEspEntry(targetPlayer)
 end)
 
+-- Aimbot system
+local aimbotEnabled = false
+local aimbotTargetPart = nil
+local aimbotEnemyOnly = false
+local aimbotVisibleOnly = false
+local aimbotMaxDistanceEnabled = false
+local aimbotMaxDistance = 250
+local aimbotTargetPlayer = nil
+local aimbotTouchStartX = nil
+local aimbotMouseStartX = nil
+local aimbotSwipeThreshold = 45
+local aimbotRenderConnection = nil
+
+local function getAimbotAimPart(character)
+    if not character or not aimbotTargetPart then
+        return nil
+    end
+
+    if aimbotTargetPart == "Head" then
+        return character:FindFirstChild("Head")
+    elseif aimbotTargetPart == "UpperTorso" then
+        return character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+    elseif aimbotTargetPart == "LowerTorso" then
+        return character:FindFirstChild("LowerTorso") or character:FindFirstChild("Torso")
+    end
+
+    return nil
+end
+
+local function isAimbotDistanceValid(targetPlayer, targetPart)
+    if not aimbotMaxDistanceEnabled then
+        return true
+    end
+
+    local localCharacter = Player.Character
+    local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+    if not localRoot or not targetPart then
+        return false
+    end
+
+    return (localRoot.Position - targetPart.Position).Magnitude <= aimbotMaxDistance
+end
+
+local function isAimbotTargetValid(targetPlayer)
+    if not aimbotEnabled or not targetPlayer or targetPlayer == Player then
+        return false
+    end
+
+    local character = targetPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local targetPart = getAimbotAimPart(character)
+
+    if not character or not humanoid or humanoid.Health <= 0 or not targetPart then
+        return false
+    end
+
+    if aimbotEnemyOnly and not isEnemyPlayer(targetPlayer) then
+        return false
+    end
+
+    if not isAimbotDistanceValid(targetPlayer, targetPart) then
+        return false
+    end
+
+    if aimbotVisibleOnly then
+        local camera = workspace.CurrentCamera
+        if not camera then
+            return false
+        end
+
+        local origin = camera.CFrame.Position
+        local direction = targetPart.Position - origin
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        local filter = {}
+        if Player.Character then
+            table.insert(filter, Player.Character)
+        end
+        rayParams.FilterDescendantsInstances = filter
+        rayParams.IgnoreWater = true
+
+        local result = workspace:Raycast(origin, direction, rayParams)
+        if result and not result.Instance:IsDescendantOf(character) then
+            return false
+        end
+    end
+
+    return true
+end
+
+local function getAimbotCandidateScore(targetPlayer)
+    local camera = workspace.CurrentCamera
+    local character = targetPlayer and targetPlayer.Character
+    local targetPart = getAimbotAimPart(character)
+    if not camera or not targetPart then
+        return math.huge
+    end
+
+    local viewportPoint, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+    if not onScreen or viewportPoint.Z <= 0 then
+        return math.huge
+    end
+
+    local center = camera.ViewportSize * 0.5
+    local dx = viewportPoint.X - center.X
+    local dy = viewportPoint.Y - center.Y
+    return (dx * dx) + (dy * dy)
+end
+
+local function getAimbotCandidates()
+    local candidates = {}
+
+    for _, targetPlayer in ipairs(game:GetService("Players"):GetPlayers()) do
+        if targetPlayer ~= Player and isAimbotTargetValid(targetPlayer) then
+            table.insert(candidates, targetPlayer)
+        end
+    end
+
+    return candidates
+end
+
+local function findBestAimbotTarget()
+    local candidates = getAimbotCandidates()
+    local bestTarget = nil
+    local bestScore = math.huge
+
+    for _, targetPlayer in ipairs(candidates) do
+        local score = getAimbotCandidateScore(targetPlayer)
+        if score < bestScore then
+            bestScore = score
+            bestTarget = targetPlayer
+        end
+    end
+
+    if not bestTarget and #candidates > 0 then
+        bestTarget = candidates[1]
+    end
+
+    return bestTarget
+end
+
+local function switchAimbotTarget(direction)
+    if not aimbotEnabled or (direction ~= -1 and direction ~= 1) then
+        return
+    end
+
+    local candidates = getAimbotCandidates()
+    if #candidates == 0 then
+        aimbotTargetPlayer = nil
+        return
+    end
+
+    local camera = workspace.CurrentCamera
+    local currentPart = aimbotTargetPlayer and getAimbotAimPart(aimbotTargetPlayer.Character)
+    local currentViewportX = nil
+
+    if camera and currentPart then
+        local point, onScreen = camera:WorldToViewportPoint(currentPart.Position)
+        if onScreen and point.Z > 0 then
+            currentViewportX = point.X
+        end
+    end
+
+    local bestTarget = nil
+    local bestScore = math.huge
+
+    for _, candidate in ipairs(candidates) do
+        if candidate ~= aimbotTargetPlayer then
+            local part = getAimbotAimPart(candidate.Character)
+            if camera and part then
+                local point, onScreen = camera:WorldToViewportPoint(part.Position)
+                if onScreen and point.Z > 0 then
+                    if currentViewportX then
+                        local delta = point.X - currentViewportX
+                        if (direction > 0 and delta > 1) or (direction < 0 and delta < -1) then
+                            local score = math.abs(delta)
+                            if score < bestScore then
+                                bestScore = score
+                                bestTarget = candidate
+                            end
+                        end
+                    else
+                        local centerX = camera.ViewportSize.X * 0.5
+                        local delta = point.X - centerX
+                        if (direction > 0 and delta > 0) or (direction < 0 and delta < 0) then
+                            local score = math.abs(delta)
+                            if score < bestScore then
+                                bestScore = score
+                                bestTarget = candidate
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if bestTarget then
+        aimbotTargetPlayer = bestTarget
+    else
+        table.sort(candidates, function(a, b)
+            return getAimbotCandidateScore(a) < getAimbotCandidateScore(b)
+        end)
+
+        if #candidates > 0 then
+            local currentIndex = 0
+            for index, candidate in ipairs(candidates) do
+                if candidate == aimbotTargetPlayer then
+                    currentIndex = index
+                    break
+                end
+            end
+
+            if currentIndex == 0 then
+                aimbotTargetPlayer = candidates[1]
+            else
+                local nextIndex = currentIndex + direction
+                if nextIndex < 1 then
+                    nextIndex = #candidates
+                elseif nextIndex > #candidates then
+                    nextIndex = 1
+                end
+                aimbotTargetPlayer = candidates[nextIndex]
+            end
+        end
+    end
+end
+
+local function setAimbotEnabled(state)
+    aimbotEnabled = state
+    if state then
+        if not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer) then
+            aimbotTargetPlayer = findBestAimbotTarget()
+        end
+    else
+        aimbotTargetPlayer = nil
+    end
+end
+
+if not aimbotRenderConnection then
+    aimbotRenderConnection = RunService.RenderStepped:Connect(function()
+        if not aimbotEnabled or not aimbotTargetPart then
+            return
+        end
+
+        if not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer) then
+            aimbotTargetPlayer = findBestAimbotTarget()
+        end
+
+        local targetPart = aimbotTargetPlayer and getAimbotAimPart(aimbotTargetPlayer.Character)
+        local camera = workspace.CurrentCamera
+        if camera and targetPart then
+            camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position)
+        end
+    end)
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not aimbotEnabled or gameProcessed or MainFrame.Visible then
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.Touch then
+        aimbotTouchStartX = input.Position.X
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+        aimbotMouseStartX = input.Position.X
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if not aimbotEnabled or MainFrame.Visible then
+        aimbotTouchStartX = nil
+        aimbotMouseStartX = nil
+        return
+    end
+
+    local startX = nil
+    if input.UserInputType == Enum.UserInputType.Touch then
+        startX = aimbotTouchStartX
+        aimbotTouchStartX = nil
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+        startX = aimbotMouseStartX
+        aimbotMouseStartX = nil
+    end
+
+    if not startX then
+        return
+    end
+
+    local deltaX = input.Position.X - startX
+    if math.abs(deltaX) >= aimbotSwipeThreshold then
+        switchAimbotTarget(deltaX > 0 and 1 or -1)
+    end
+end)
+
 createCategory("Main", "Aimbot", "129360992122557")
+
+createOption("Enable Aimbot", false, "Main", function(state)
+    setAimbotEnabled(state)
+end)
+
+createSingleSelectOption("Main", "AimbotTargetPart", "Target Part", {
+    "Head",
+    "UpperTorso",
+    "LowerTorso"
+}, nil, function(selectedOption)
+    aimbotTargetPart = selectedOption
+    if aimbotEnabled then
+        if not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer) then
+            aimbotTargetPlayer = findBestAimbotTarget()
+        end
+    end
+end, true)
+
+if type(optionStates["AimbotTargetPart"]) == "string" then
+    aimbotTargetPart = optionStates["AimbotTargetPart"]
+end
+
+createOption("Enemy Only", false, "Main", function(state)
+    aimbotEnemyOnly = state
+    if aimbotEnabled and (not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer)) then
+        aimbotTargetPlayer = findBestAimbotTarget()
+    end
+end)
+
+createOption("Visible Only", false, "Main", function(state)
+    aimbotVisibleOnly = state
+    if aimbotEnabled and (not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer)) then
+        aimbotTargetPlayer = findBestAimbotTarget()
+    end
+end)
+
+createOption("Enable Max Distance", false, "Main", function(state)
+    aimbotMaxDistanceEnabled = state
+    if aimbotEnabled and (not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer)) then
+        aimbotTargetPlayer = findBestAimbotTarget()
+    end
+end)
+
+createNumberSlider("Max Distance", 1, 5000, 250, "1 - 5000", "Main", function(value)
+    aimbotMaxDistance = math.clamp(tonumber(value) or 250, 1, 5000)
+    if aimbotEnabled and (not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer)) then
+        aimbotTargetPlayer = findBestAimbotTarget()
+    end
+end)
+
+
 
 createCategory("Main", "ESP", "74492590812457")
 
