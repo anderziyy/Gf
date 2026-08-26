@@ -5198,6 +5198,7 @@ local function updateEspEntry(targetPlayer)
     local showHealth = passesFilter and isEspSelected("Health ESP")
     local showDistance = passesFilter and isEspSelected("Distance ESP")
     local showBox = passesFilter and isEspSelected("Box ESP")
+    local showHealthText = showHealth and not showBox
 
     -- Weapon ESP reads only from the exact requested path:
     -- Workspace > [PlayerName] > Tool
@@ -5283,7 +5284,7 @@ local function updateEspEntry(targetPlayer)
     if showName then
         table.insert(infoParts, targetPlayer.DisplayName ~= "" and targetPlayer.DisplayName or targetPlayer.Name)
     end
-    if showHealth then
+    if showHealthText then
         table.insert(infoParts, string.format("%d%%", math.floor(healthPercent + 0.5)))
     end
     if showDistance then
@@ -5819,8 +5820,8 @@ createOption("Enable FOV", false, "Main", function(state)
     updateAimbotFovVisual()
 end)
 
-createNumberSlider("FOV Size", 1, 300, 240, "1 - 300", "Main", function(value)
-    aimbotFovSize = math.clamp(tonumber(value) or 240, 1, 300)
+createNumberSlider("FOV Size", 1, 1000, 240, "1 - 1000", "Main", function(value)
+    aimbotFovSize = math.clamp(tonumber(value) or 240, 1, 1000)
     updateAimbotFovGeometry()
 end)
 
