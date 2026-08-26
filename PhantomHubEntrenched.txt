@@ -1195,9 +1195,9 @@ local function createNumberSlider(name, min, max, default, placeholderText, tabN
     ContainerStroke.Parent = Container
 
     local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0.55, 0, 0.42, 0)
-    Label.Position = UDim2.new(0.05, 0, 0.02, 0)
-    Label.Text = name .. ": " .. tostring(currentVal)
+    Label.Size = UDim2.new(0.55, 0, 1, 0)
+    Label.Position = UDim2.new(0.05, 0, 0, 0)
+    Label.Text = name
     Label.TextColor3 = Color3.fromRGB(255, 255, 255)
     Label.BackgroundTransparency = 1
     Label.TextXAlignment = Enum.TextXAlignment.Left
@@ -1208,14 +1208,14 @@ local function createNumberSlider(name, min, max, default, placeholderText, tabN
 
     local ValueBox = Instance.new("TextBox")
     ValueBox.Name = "ValueBox"
-    ValueBox.Size = UDim2.new(0.28, 0, 0.34, 0)
-    ValueBox.Position = UDim2.new(0.67, 0, 0.07, 0)
+    ValueBox.Size = UDim2.new(0.30, 0, 0.42, 0)
+    ValueBox.Position = UDim2.new(0.65, 0, 0.29, 0)
     ValueBox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     ValueBox.BorderSizePixel = 0
     ValueBox.TextColor3 = Color3.fromRGB(255, 255, 255)
     ValueBox.PlaceholderColor3 = Color3.fromRGB(160, 160, 160)
     ValueBox.PlaceholderText = placeholderText or "1 - 5000"
-    ValueBox.Text = tostring(currentVal)
+    ValueBox.Text = ""
     ValueBox.TextSize = rpx(16)
     ValueBox.Font = Enum.Font.SourceSansBold
     ValueBox.ClearTextOnFocus = false
@@ -1232,131 +1232,48 @@ local function createNumberSlider(name, min, max, default, placeholderText, tabN
     ValueStroke.Thickness = 1
     ValueStroke.Parent = ValueBox
 
-    local SliderBG = Instance.new("TextButton")
-    SliderBG.Size = UDim2.new(0.9, 0, 0.11, 0)
-    SliderBG.Position = UDim2.new(0.05, 0, 0.55, 0)
-    SliderBG.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    SliderBG.Text = ""
-    SliderBG.Parent = Container
-    SliderBG.AutoButtonColor = false
-    SliderBG.ZIndex = 999999
+    local function applyValue(rawValue)
+        local numeric = tonumber(rawValue)
+        if numeric == nil then
+            ValueBox.Text = tostring(currentVal)
+            return currentVal
+        end
 
-    local SliderCorner = Instance.new("UICorner")
-    SliderCorner.CornerRadius = UDim.new(0, rpx(0))
-    SliderCorner.Parent = SliderBG
-
-    local function valueToScale(value)
-        return math.clamp((value - min) / (max - min), 0, 1)
-    end
-
-    local function applyValue(value, updateTextBox)
-        value = math.clamp(math.floor(tonumber(value) or min), min, max)
+        local value = math.clamp(math.floor(numeric + 0.5), min, max)
+        currentVal = value
         optionStates[name] = value
         setOptionState(name, value)
 
-        local scale = valueToScale(value)
-        SliderFill.Size = UDim2.new(scale, 0, 1, 0)
-        Circle.Position = UDim2.new(scale, 0, 0.5, 0)
-        Label.Text = name .. ": " .. tostring(value)
-        if updateTextBox and ValueBox.Text ~= tostring(value) then
-            ValueBox.Text = tostring(value)
-        end
+        -- Show only the chosen number after the user commits a value.
+        ValueBox.Text = tostring(value)
 
         if callback then
             callback(value)
         end
+
+        return value
     end
-
-    local initialScale = valueToScale(currentVal)
-    local SliderFill = Instance.new("Frame")
-    SliderFill.Name = "SliderFill"
-    SliderFill.Size = UDim2.new(initialScale, 0, 1, 0)
-    SliderFill.BackgroundColor3 = Color3.fromRGB(100, 150, 200)
-    SliderFill.BorderSizePixel = 0
-    SliderFill.Parent = SliderBG
-    SliderFill.ZIndex = 999999
-
-    local FillCorner = Instance.new("UICorner")
-    FillCorner.CornerRadius = UDim.new(0, rpx(0))
-    FillCorner.Parent = SliderFill
-
-    local Circle = Instance.new("Frame")
-    Circle.Name = "SliderCircle"
-    Circle.AnchorPoint = Vector2.new(0.5, 0.5)
-    Circle.Size = UDim2.new(0, rpx(14), 0, rpx(14))
-    Circle.Position = UDim2.new(initialScale, 0, 0.5, 0)
-    Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Circle.BorderSizePixel = 0
-    Circle.Parent = SliderBG
-    Circle.ZIndex = 1000000
-
-    local CircleCorner = Instance.new("UICorner")
-    CircleCorner.CornerRadius = UDim.new(0, rpx(0))
-    CircleCorner.Parent = Circle
-
-    if callback then
-        task.spawn(function() callback(currentVal) end)
-    end
-
-    local dragging = false
-    local function updateSlider(input)
-        if SliderBG.AbsoluteSize.X <= 0 then
-            return
-        end
-        local relativeX = math.clamp(input.Position.X - SliderBG.AbsolutePosition.X, 0, SliderBG.AbsoluteSize.X)
-        local scale = relativeX / SliderBG.AbsoluteSize.X
-        local value = math.floor(min + ((max - min) * scale) + 0.5)
-        applyValue(value, true)
-    end
-
-    local function beginSliderDrag(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            updateSlider(input)
-        end
-    end
-
-    SliderBG.InputBegan:Connect(beginSliderDrag)
-    Circle.InputBegan:Connect(beginSliderDrag)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging then
-            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                updateSlider(input)
-            end
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-
-    local editing = false
-    ValueBox.Focused:Connect(function()
-        editing = true
-    end)
 
     ValueBox:GetPropertyChangedSignal("Text"):Connect(function()
-        if not editing then
-            return
-        end
-        local digits = ValueBox.Text:gsub("[^%d]", "")
-        if digits ~= ValueBox.Text then
-            ValueBox.Text = digits
+        local filtered = ValueBox.Text:gsub("%D", "")
+        if filtered ~= ValueBox.Text then
+            ValueBox.Text = filtered
         end
     end)
 
     ValueBox.FocusLost:Connect(function()
-        editing = false
-        local digits = ValueBox.Text:gsub("[^%d]", "")
-        local numericValue = tonumber(digits) or currentVal
-        applyValue(numericValue, true)
+        applyValue(ValueBox.Text)
     end)
 
     registerElement(tabName, Container, name)
+
+    if callback then
+        task.spawn(function()
+            callback(currentVal)
+        end)
+    end
 end
+
 
 local function createInfoBox(title, desc, tabName, isButton, linkToCopy)
     if not tabs[tabName] then
@@ -4785,11 +4702,13 @@ local DEFAULT_ESP_TEXT_COLOR = Color3.fromRGB(255, 0, 0)
 local DEFAULT_ESP_ALLY_COLOR = Color3.fromRGB(0, 255, 0)
 local DEFAULT_ESP_ENEMY_COLOR = Color3.fromRGB(255, 0, 0)
 local DEFAULT_ESP_TRACER_COLOR = Color3.fromRGB(255, 0, 0)
+local DEFAULT_ESP_BOX_COLOR = Color3.fromRGB(0, 0, 0)
 
 local espTextColor = hexToColor3(savedSettings["ESPTextColor"], DEFAULT_ESP_TEXT_COLOR)
 local espAllyColor = hexToColor3(savedSettings["ESPAllyColor"], DEFAULT_ESP_ALLY_COLOR)
 local espEnemyColor = hexToColor3(savedSettings["ESPEnemyColor"], DEFAULT_ESP_ENEMY_COLOR)
 local espTracerColor = hexToColor3(savedSettings["ESPTracerColor"], DEFAULT_ESP_TRACER_COLOR)
+local espBoxColor = hexToColor3(savedSettings["ESPBoxColor"], DEFAULT_ESP_BOX_COLOR)
 
 if type(savedSettings["ESPTextColor"]) ~= "string" then
     savedSettings["ESPTextColor"] = color3ToHex(espTextColor)
@@ -4802,6 +4721,9 @@ if type(savedSettings["ESPEnemyColor"]) ~= "string" then
 end
 if type(savedSettings["ESPTracerColor"]) ~= "string" then
     savedSettings["ESPTracerColor"] = color3ToHex(espTracerColor)
+end
+if type(savedSettings["ESPBoxColor"]) ~= "string" then
+    savedSettings["ESPBoxColor"] = color3ToHex(espBoxColor)
 end
 saveSettings()
 
@@ -5127,7 +5049,7 @@ local function createEspEntry(targetPlayer)
     box.ZIndex = 10
 
     local boxStroke = Instance.new("UIStroke")
-    boxStroke.Color = Color3.fromRGB(0, 0, 0)
+    boxStroke.Color = espBoxColor
     boxStroke.Thickness = 2
     boxStroke.Parent = box
 
@@ -5347,6 +5269,7 @@ local function updateEspEntry(targetPlayer)
     entry.box.Visible = showBox
     entry.box.Position = UDim2.fromOffset(0, 0)
     entry.box.Size = UDim2.fromScale(1, 1)
+    entry.boxStroke.Color = espBoxColor
 
     local health = humanoid.MaxHealth > 0 and math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1) or 0
     local healthPercent = health * 100
@@ -5460,6 +5383,8 @@ local aimbotMouseStartX = nil
 local aimbotSwipeThreshold = 45
 local aimbotRenderConnection = nil
 local aimbotFovEnabled = false
+local aimbotFovSize = 240
+local aimbotFovThickness = 1
 local aimbotFovGui = nil
 local aimbotFovStroke = nil
 
@@ -5698,7 +5623,7 @@ local function ensureAimbotFovGui()
     circle.Name = "FOVCircle"
     circle.AnchorPoint = Vector2.new(0.5, 0.5)
     circle.Position = UDim2.fromScale(0.5, 0.5)
-    circle.Size = UDim2.fromOffset(rpx(240), rpx(240))
+    circle.Size = UDim2.fromOffset(rpx(aimbotFovSize), rpx(aimbotFovSize))
     circle.BackgroundTransparency = 1
     circle.BorderSizePixel = 0
     circle.Visible = false
@@ -5710,7 +5635,7 @@ local function ensureAimbotFovGui()
 
     local stroke = Instance.new("UIStroke")
     stroke.Color = DEFAULT_AIMBOT_FOV_COLOR_NONE
-    stroke.Thickness = math.max(1, rpx(1))
+    stroke.Thickness = math.max(1, rpx(aimbotFovThickness))
     stroke.Transparency = 0
     stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     stroke.Parent = circle
@@ -5729,6 +5654,17 @@ local function setAimbotFovVisible(state)
     end
 end
 
+local function updateAimbotFovGeometry()
+    if not aimbotFovGui or not aimbotFovGui.Parent then
+        return
+    end
+
+    aimbotFovGui.Size = UDim2.fromOffset(rpx(aimbotFovSize), rpx(aimbotFovSize))
+    if aimbotFovStroke then
+        aimbotFovStroke.Thickness = math.max(1, rpx(aimbotFovThickness))
+    end
+end
+
 local function updateAimbotFovVisual()
     if not aimbotFovEnabled then
         if aimbotFovGui then
@@ -5739,6 +5675,7 @@ local function updateAimbotFovVisual()
 
     ensureAimbotFovGui()
     aimbotFovGui.Visible = true
+    updateAimbotFovGeometry()
 
     local target = aimbotTargetPlayer
     if target and isAimbotTargetValid(target) then
@@ -5882,7 +5819,15 @@ createOption("Enable FOV", false, "Main", function(state)
     updateAimbotFovVisual()
 end)
 
+createNumberSlider("FOV Size", 1, 300, 240, "1 - 300", "Main", function(value)
+    aimbotFovSize = math.clamp(tonumber(value) or 240, 1, 300)
+    updateAimbotFovGeometry()
+end)
 
+createNumberSlider("FOV Thickness", 1, 150, 1, "1 - 150", "Main", function(value)
+    aimbotFovThickness = math.clamp(tonumber(value) or 1, 1, 150)
+    updateAimbotFovGeometry()
+end)
 
 createCategory("Main", "ESP", "74492590812457")
 
@@ -5933,6 +5878,13 @@ end)
 
 createColorOption("Main", "ESPTracerColor", "Tracer Color", DEFAULT_ESP_TRACER_COLOR, function(color)
     espTracerColor = color
+    if espEnabled then
+        updateAllEsp()
+    end
+end)
+
+createColorOption("Main", "ESPBoxColor", "Box Color", DEFAULT_ESP_BOX_COLOR, function(color)
+    espBoxColor = color
     if espEnabled then
         updateAllEsp()
     end
