@@ -7,7 +7,6 @@ local VirtualUser = game:GetService("VirtualUser")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
 
 local BASE_VIEWPORT_SIZE = Vector2.new(1600, 720)
 
@@ -2825,11 +2824,15 @@ local lootItemIDs = {
     ["Reality Loom"] = "RealityLoom"
 }
 
-
+-- Low Mode and Brightness system
+local lowModeEnabled = false
+local brightnessEnabled = false
+local brightnessAmount = 1
 
 -- ESP system
 local espEnabled = false
 local espSelection = {}
+local espEnemyOnly = false
 local espScreenGui = nil
 local espEntries = {}
 local espRenderConnection = nil
@@ -3565,6 +3568,7 @@ local aimbotEnemyOnly = false
 local aimbotVisibleOnly = false
 local aimbotMaxDistanceEnabled = false
 local aimbotMaxDistance = 250
+local aimbotPredictionEnabled = false
 local aimbotTargetPlayer = nil
 local aimbotTouchStartX = nil
 local aimbotMouseStartX = nil
@@ -3972,6 +3976,15 @@ if type(optionStates["AimbotTargetPart"]) == "string" then
     aimbotTargetPart = optionStates["AimbotTargetPart"]
 end
 
+createOption("Prediction", false, "Main", function(state)
+    aimbotPredictionEnabled = state
+    if aimbotEnabled and aimbotPredictionEnabled then
+        if not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer) then
+            aimbotTargetPlayer = findBestAimbotTarget()
+        end
+    end
+end)
+
 createOption("Enemy Only", false, "Main", function(state)
     aimbotEnemyOnly = state
     if aimbotEnabled and (not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer)) then
@@ -4031,10 +4044,18 @@ createESPMultiSelectOption("Main", "ESPSelections", "Select ESPS", {
     "Distance ESP",
     "Box ESP",
     "Player ESP",
+    "Enemy Only",
     "Enemy ESP",
     "Team Color"
 }, function(selected)
     espSelection = selected or {}
+    espEnemyOnly = false
+    for _, option in ipairs(espSelection) do
+        if option == "Enemy Only" then
+            espEnemyOnly = true
+            break
+        end
+    end
     if espEnabled then
         updateAllEsp()
     end
@@ -4042,6 +4063,13 @@ end)
 
 if type(optionStates["ESPSelections"]) == "table" then
     espSelection = optionStates["ESPSelections"]
+    espEnemyOnly = false
+    for _, option in ipairs(espSelection) do
+        if option == "Enemy Only" then
+            espEnemyOnly = true
+            break
+        end
+    end
 end
 
 createColorOption("Main", "ESPTextColor", "Text Color", DEFAULT_ESP_TEXT_COLOR, function(color)
@@ -4079,202 +4107,52 @@ createColorOption("Main", "ESPBoxColor", "Box Color", DEFAULT_ESP_BOX_COLOR, fun
     end
 end)
 
--- Local visual/performance helpers
--- These options only change local rendering/lighting and restore the previous state when disabled.
-local lowModeEnabled = false
-local lowModeSaved = {}
-local lowModeDescendantConnection = nil
-local lowModeTerrainSaved = nil
-local lowModeLightingSaved = nil
-
-local function saveLowModeProperty(instance, property)
-    if not instance then
-        return
-    end
-
-    local entry = lowModeSaved[instance]
-    if not entry then
-        entry = {}
-        lowModeSaved[instance] = entry
-    end
-
-    if entry[property] == nil then
-        local ok, value = pcall(function()
-            return instance[property]
-        end)
-        if ok then
-            entry[property] = value
-        end
-    end
-end
-
-local function optimizeInstance(instance)
-    if not instance or not instance.Parent then
-        return
-    end
-
-    if instance:IsA("MeshPart") then
-        saveLowModeProperty(instance, "Material")
-        saveLowModeProperty(instance, "Reflectance")
-        saveLowModeProperty(instance, "CastShadow")
-        saveLowModeProperty(instance, "TextureID")
-
-        pcall(function() instance.Material = Enum.Material.SmoothPlastic end)
-        pcall(function() instance.Reflectance = 0 end)
-        pcall(function() instance.CastShadow = false end)
-        pcall(function() instance.TextureID = "" end)
-    elseif instance:IsA("BasePart") then
-        saveLowModeProperty(instance, "Material")
-        saveLowModeProperty(instance, "Reflectance")
-        saveLowModeProperty(instance, "CastShadow")
-
-        pcall(function() instance.Material = Enum.Material.SmoothPlastic end)
-        pcall(function() instance.Reflectance = 0 end)
-        pcall(function() instance.CastShadow = false end)
-    elseif instance:IsA("Decal") or instance:IsA("Texture") then
-        saveLowModeProperty(instance, "Transparency")
-        pcall(function() instance.Transparency = 1 end)
-    elseif instance:IsA("ParticleEmitter") or instance:IsA("Trail") or instance:IsA("Beam") then
-        saveLowModeProperty(instance, "Enabled")
-        pcall(function() instance.Enabled = false end)
-    elseif instance:IsA("Smoke") or instance:IsA("Fire") or instance:IsA("Sparkles") then
-        saveLowModeProperty(instance, "Enabled")
-        pcall(function() instance.Enabled = false end)
-    end
-end
-
-local function applyLowMode()
-    lowModeEnabled = true
-
-    if lowModeTerrainSaved == nil then
-        local ok, value = pcall(function()
-            return workspace.Terrain.Decoration
-        end)
-        if ok then
-            lowModeTerrainSaved = value
-            pcall(function() workspace.Terrain.Decoration = false end)
-        end
-    end
-
-    if lowModeLightingSaved == nil then
-        lowModeLightingSaved = {}
-        local properties = {
-            "GlobalShadows",
-            "EnvironmentDiffuseScale",
-            "EnvironmentSpecularScale"
-        }
-        for _, property in ipairs(properties) do
-            local ok, value = pcall(function()
-                return Lighting[property]
-            end)
-            if ok then
-                lowModeLightingSaved[property] = value
-            end
-        end
-
-        pcall(function() Lighting.GlobalShadows = false end)
-        pcall(function() Lighting.EnvironmentDiffuseScale = 0 end)
-        pcall(function() Lighting.EnvironmentSpecularScale = 0 end)
-    end
-
-    for _, instance in ipairs(workspace:GetDescendants()) do
-        optimizeInstance(instance)
-    end
-
-    if lowModeDescendantConnection then
-        lowModeDescendantConnection:Disconnect()
-    end
-
-    lowModeDescendantConnection = workspace.DescendantAdded:Connect(function(instance)
-        if lowModeEnabled then
-            optimizeInstance(instance)
-        end
-    end)
-end
-
-local function restoreLowMode()
-    lowModeEnabled = false
-
-    if lowModeDescendantConnection then
-        lowModeDescendantConnection:Disconnect()
-        lowModeDescendantConnection = nil
-    end
-
-    for instance, properties in pairs(lowModeSaved) do
-        if instance and instance.Parent then
-            for property, value in pairs(properties) do
-                pcall(function()
-                    instance[property] = value
-                end)
-            end
-        end
-    end
-    lowModeSaved = {}
-
-    if lowModeTerrainSaved ~= nil then
-        pcall(function() workspace.Terrain.Decoration = lowModeTerrainSaved end)
-        lowModeTerrainSaved = nil
-    end
-
-    if lowModeLightingSaved then
-        for property, value in pairs(lowModeLightingSaved) do
-            pcall(function()
-                Lighting[property] = value
-            end)
-        end
-        lowModeLightingSaved = nil
-    end
-end
-
-local brightnessEnabled = false
-local brightnessValue = 75
-local brightnessEffect = nil
-
-local function applyBrightness()
-    if not brightnessEnabled then
-        if brightnessEffect then
-            brightnessEffect:Destroy()
-            brightnessEffect = nil
-        end
-        return
-    end
-
-    if not brightnessEffect or not brightnessEffect.Parent then
-        brightnessEffect = Instance.new("ColorCorrectionEffect")
-        brightnessEffect.Name = "PhantomHubBrightness"
-        brightnessEffect.Contrast = 0
-        brightnessEffect.Saturation = 0
-        brightnessEffect.Parent = Lighting
-    end
-
-    local value = math.clamp(tonumber(brightnessValue) or 75, 1, 150)
-    -- Map 1..150 to a visible but bounded local ColorCorrection brightness.
-    brightnessEffect.Brightness = ((value - 1) / 149) * 0.9
-    brightnessEffect.Contrast = -0.03
-end
-
 createCategory("Config", "Player", "102791662357524")
-
-createSpecialButton("Auto Rejoin", "Config", function()
-    TeleportService:Teleport(game.PlaceId)
-end)
 
 createOption("Low Mode", false, "Config", function(state)
     if state then
-        applyLowMode()
+        local lighting = game:GetService("Lighting")
+        lighting.Brightness = 0
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.Material = Enum.Material.SmoothPlastic
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Explosion") then
+                obj.Enabled = false
+            end
+        end
     else
-        restoreLowMode()
+        local lighting = game:GetService("Lighting")
+        lighting.Brightness = 2
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Explosion") then
+                obj.Enabled = true
+            end
+        end
     end
 end)
 
 createOption("Enable Brightness", false, "Config", function(state)
-    brightnessEnabled = state
-    applyBrightness()
+    if state then
+        local brightnessAmount = optionStates["Brightness Amount"] or 1
+        local lighting = game:GetService("Lighting")
+        lighting.Brightness = brightnessAmount / 100
+    else
+        local lighting = game:GetService("Lighting")
+        lighting.Brightness = 2
+    end
 end)
 
-createNumberSlider("Brightness", 1, 150, 75, "1 - 150", "Config", function(value)
-    brightnessValue = math.clamp(tonumber(value) or 75, 1, 150)
-    applyBrightness()
+createNumberSlider("Brightness Amount", 1, 150, 1, "1 - 150", "Config", function(value)
+    local brightnessEnabled = optionStates["Enable Brightness"]
+    if type(brightnessEnabled) == "function" then brightnessEnabled = brightnessEnabled() end
+    if brightnessEnabled then
+        local lighting = game:GetService("Lighting")
+        lighting.Brightness = value / 100
+    end
+end)
+
+createSpecialButton("Auto Rejoin", "Config", function()
+    TeleportService:Teleport(game.PlaceId)
 end)
 
 createOption("Anti AFK", false, "Config")
