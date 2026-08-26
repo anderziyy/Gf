@@ -7,6 +7,7 @@ local VirtualUser = game:GetService("VirtualUser")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
 
 local BASE_VIEWPORT_SIZE = Vector2.new(1600, 720)
 
@@ -4657,6 +4658,139 @@ local lootItemIDs = {
 
 
 
+
+-- Performance / brightness helpers
+local lowModeEnabled = false
+local lowModeState = {
+    terrainDecoration = nil,
+    instances = {}
+}
+
+local function rememberLowModeProperty(instance, propertyName)
+    local state = lowModeState.instances[instance]
+    if not state then
+        state = {}
+        lowModeState.instances[instance] = state
+    end
+
+    if state[propertyName] == nil then
+        local ok, value = pcall(function()
+            return instance[propertyName]
+        end)
+        if ok then
+            state[propertyName] = value
+        end
+    end
+end
+
+local function setLowModeProperty(instance, propertyName, value)
+    rememberLowModeProperty(instance, propertyName)
+    pcall(function()
+        instance[propertyName] = value
+    end)
+end
+
+local function applyLowMode()
+    lowModeState.terrainDecoration = workspace.Terrain.Decoration
+
+    pcall(function()
+        workspace.Terrain.Decoration = false
+    end)
+
+    for _, instance in ipairs(workspace:GetDescendants()) do
+        if instance:IsA("BasePart") then
+            setLowModeProperty(instance, "Material", Enum.Material.SmoothPlastic)
+            setLowModeProperty(instance, "CastShadow", false)
+        elseif instance:IsA("Decal") or instance:IsA("Texture") then
+            setLowModeProperty(instance, "Transparency", 1)
+        elseif instance:IsA("ParticleEmitter") or instance:IsA("Trail") or instance:IsA("Beam") then
+            setLowModeProperty(instance, "Enabled", false)
+        elseif instance:IsA("Smoke") or instance:IsA("Fire") or instance:IsA("Sparkles") then
+            setLowModeProperty(instance, "Enabled", false)
+        elseif instance:IsA("PointLight") or instance:IsA("SpotLight") or instance:IsA("SurfaceLight") then
+            setLowModeProperty(instance, "Enabled", false)
+        elseif instance:IsA("BloomEffect") or instance:IsA("BlurEffect")
+            or instance:IsA("ColorCorrectionEffect") or instance:IsA("DepthOfFieldEffect")
+            or instance:IsA("SunRaysEffect") then
+            setLowModeProperty(instance, "Enabled", false)
+        end
+    end
+
+    lowModeEnabled = true
+end
+
+local function restoreLowMode()
+    for instance, properties in pairs(lowModeState.instances) do
+        if instance and instance.Parent then
+            for propertyName, value in pairs(properties) do
+                pcall(function()
+                    instance[propertyName] = value
+                end)
+            end
+        end
+    end
+
+    if lowModeState.terrainDecoration ~= nil then
+        pcall(function()
+            workspace.Terrain.Decoration = lowModeState.terrainDecoration
+        end)
+    end
+
+    lowModeState.instances = {}
+    lowModeState.terrainDecoration = nil
+    lowModeEnabled = false
+end
+
+workspace.DescendantAdded:Connect(function(instance)
+    if not lowModeEnabled then
+        return
+    end
+
+    if instance:IsA("BasePart") then
+        setLowModeProperty(instance, "Material", Enum.Material.SmoothPlastic)
+        setLowModeProperty(instance, "CastShadow", false)
+    elseif instance:IsA("Decal") or instance:IsA("Texture") then
+        setLowModeProperty(instance, "Transparency", 1)
+    elseif instance:IsA("ParticleEmitter") or instance:IsA("Trail") or instance:IsA("Beam")
+        or instance:IsA("Smoke") or instance:IsA("Fire") or instance:IsA("Sparkles") then
+        setLowModeProperty(instance, "Enabled", false)
+    elseif instance:IsA("PointLight") or instance:IsA("SpotLight") or instance:IsA("SurfaceLight") then
+        setLowModeProperty(instance, "Enabled", false)
+    elseif instance:IsA("BloomEffect") or instance:IsA("BlurEffect")
+        or instance:IsA("ColorCorrectionEffect") or instance:IsA("DepthOfFieldEffect")
+        or instance:IsA("SunRaysEffect") then
+        setLowModeProperty(instance, "Enabled", false)
+    end
+end)
+
+local DEFAULT_BRIGHTNESS = 2
+local brightnessEnabled = false
+local brightnessValue = math.clamp(tonumber(savedSettings["BrightnessValue"]) or 25, 1, 150)
+local originalBrightness = nil
+
+local function setBrightnessEnabled(state)
+    brightnessEnabled = state
+
+    if state then
+        if originalBrightness == nil then
+            originalBrightness = Lighting.Brightness
+        end
+        Lighting.Brightness = brightnessValue
+    else
+        if originalBrightness ~= nil then
+            Lighting.Brightness = originalBrightness
+            originalBrightness = nil
+        end
+    end
+end
+
+local function setBrightnessValue(value)
+    brightnessValue = math.clamp(math.floor(tonumber(value) or 25), 1, 150)
+    if brightnessEnabled then
+        Lighting.Brightness = brightnessValue
+    end
+end
+
 -- ESP system
 local espEnabled = false
 local espSelection = {}
@@ -5179,7 +5313,10 @@ local function updateEspEntry(targetPlayer)
     if isEspSelected("Player ESP") then
         local localCharacter = Player.Character
         local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
-        if localRoot then
+        local enemyOnlyAura = isEspSelected("Enemy Auras")
+        local shouldShowAura = isEnemyPlayer(targetPlayer) or not enemyOnlyAura
+
+        if localRoot and shouldShowAura then
             local auraColor = isEnemyPlayer(targetPlayer) and espEnemyColor or espAllyColor
             entry.highlight.FillColor = auraColor
             entry.highlight.OutlineColor = auraColor
@@ -5388,6 +5525,36 @@ local aimbotFovSize = 240
 local aimbotFovThickness = 1
 local aimbotFovGui = nil
 local aimbotFovStroke = nil
+local aimbotPredictionEnabled = false
+local aimbotPredictionLead = 0.12
+
+local function getPredictedAimbotPosition(targetPart)
+    if not targetPart then
+        return nil
+    end
+
+    if not aimbotPredictionEnabled then
+        return targetPart.Position
+    end
+
+    local velocity = targetPart.AssemblyLinearVelocity
+    local speed = velocity.Magnitude
+    if speed <= 0.05 then
+        return targetPart.Position
+    end
+
+    local lead = math.clamp(aimbotPredictionLead + (speed / 250), 0.08, 0.30)
+    return targetPart.Position + (velocity * lead)
+end
+
+local function getAimbotAimPoint(character)
+    local targetPart = getAimbotAimPart(character)
+    if not targetPart then
+        return nil
+    end
+
+    return getPredictedAimbotPosition(targetPart)
+end
 
 local function getAimbotAimPart(character)
     if not character or not aimbotTargetPart then
@@ -5474,7 +5641,12 @@ local function getAimbotCandidateScore(targetPlayer)
         return math.huge
     end
 
-    local viewportPoint, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+    local aimPoint = getAimbotAimPoint(character)
+    if not aimPoint then
+        return math.huge
+    end
+
+    local viewportPoint, onScreen = camera:WorldToViewportPoint(aimPoint)
     if not onScreen or viewportPoint.Z <= 0 then
         return math.huge
     end
@@ -5545,8 +5717,9 @@ local function switchAimbotTarget(direction)
     for _, candidate in ipairs(candidates) do
         if candidate ~= aimbotTargetPlayer then
             local part = getAimbotAimPart(candidate.Character)
-            if camera and part then
-                local point, onScreen = camera:WorldToViewportPoint(part.Position)
+            local aimPoint = getAimbotAimPoint(candidate.Character)
+            if camera and part and aimPoint then
+                local point, onScreen = camera:WorldToViewportPoint(aimPoint)
                 if onScreen and point.Z > 0 then
                     if currentViewportX then
                         local delta = point.X - currentViewportX
@@ -5714,10 +5887,11 @@ if not aimbotRenderConnection then
             aimbotTargetPlayer = findBestAimbotTarget()
         end
 
-        local targetPart = aimbotTargetPlayer and getAimbotAimPart(aimbotTargetPlayer.Character)
+        local targetCharacter = aimbotTargetPlayer and aimbotTargetPlayer.Character
+        local targetPoint = targetCharacter and getAimbotAimPoint(targetCharacter)
         local camera = workspace.CurrentCamera
-        if camera and targetPart then
-            camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPart.Position)
+        if camera and targetPoint then
+            camera.CFrame = CFrame.lookAt(camera.CFrame.Position, targetPoint)
         end
 
         updateAimbotFovVisual()
@@ -5725,7 +5899,7 @@ if not aimbotRenderConnection then
 end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not aimbotEnabled or gameProcessed or MainFrame.Visible then
+    if not aimbotEnabled or MainFrame.Visible then
         return
     end
 
@@ -5784,6 +5958,13 @@ end, true)
 if type(optionStates["AimbotTargetPart"]) == "string" then
     aimbotTargetPart = optionStates["AimbotTargetPart"]
 end
+
+createOption("Prediction", false, "Main", function(state)
+    aimbotPredictionEnabled = state
+    if aimbotEnabled and (not aimbotTargetPlayer or not isAimbotTargetValid(aimbotTargetPlayer)) then
+        aimbotTargetPlayer = findBestAimbotTarget()
+    end
+end)
 
 createOption("Enemy Only", false, "Main", function(state)
     aimbotEnemyOnly = state
@@ -5844,7 +6025,8 @@ createESPMultiSelectOption("Main", "ESPSelections", "Select ESPS", {
     "Distance ESP",
     "Box ESP",
     "Player ESP",
-    "Enemy ESP"
+    "Enemy ESP",
+    "Enemy Auras"
 }, function(selected)
     espSelection = selected or {}
     if espEnabled then
@@ -5900,6 +6082,22 @@ end)
 createOption("Anti AFK", false, "Config")
 createOption("Enable Shift Lock", false, "Config", function(state)
     getgenv().ShiftLockEnabled = state
+end)
+
+createOption("Low Mode", false, "Config", function(state)
+    if state then
+        applyLowMode()
+    else
+        restoreLowMode()
+    end
+end)
+
+createOption("Enable Brightness", false, "Config", function(state)
+    setBrightnessEnabled(state)
+end)
+
+createNumberSlider("Brightness", 1, 150, brightnessValue, "1 - 150", "Config", function(value)
+    setBrightnessValue(value)
 end)
 
 createInfoBox("By: Cleiton10HDx", "Script created by this user.", "Credits", false)
