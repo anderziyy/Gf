@@ -7,6 +7,7 @@ local VirtualUser = game:GetService("VirtualUser")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local BASE_VIEWPORT_SIZE = Vector2.new(1600, 720)
 
@@ -555,6 +556,11 @@ local categoryArrows = {}
 local categoryHeaderKeys = {}
 local currentCategoryByTab = {}
 local searchOnlyElements = {}
+-- These options keep their logic and saved state, but are intentionally hidden from the Player menu.
+local hiddenOptionNames = {
+    ["Instant Prompt"] = true,
+    ["Auto Prompt"] = true,
+}
 local updateSearchFilter
 
 local function getCategoryKey(tabName, categoryName)
@@ -961,7 +967,7 @@ local function createOption(name, startActive, tabName, callback)
     Container.Name = tostring(optionCounter)
     Container.LayoutOrder = optionCounter
     Container.ZIndex = 999999
-    Container.Visible = (tabName == activeTab)
+    Container.Visible = (tabName == activeTab) and not hiddenOptionNames[name]
 
     local UICorner = Instance.new("UICorner")
     UICorner.CornerRadius = UDim.new(0, rpx(0))
@@ -4436,6 +4442,140 @@ createColorOption("Main", "ESPBoxColor", "Box Color", DEFAULT_ESP_BOX_COLOR, fun
     end
 end)
 
+-- Proximity prompt helpers
+local instantPromptEnabled = false
+local autoPromptEnabled = false
+local promptConnections = {}
+local originalPromptHoldDuration = {}
+
+local function isPromptUsable(prompt)
+    if not prompt or not prompt.Parent or not prompt:IsA("ProximityPrompt") then
+        return false
+    end
+    if not prompt.Enabled then
+        return false
+    end
+
+    local character = Player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then
+        return false
+    end
+
+    local parent = prompt.Parent
+    local promptPosition
+
+    if parent:IsA("BasePart") then
+        promptPosition = parent.Position
+    elseif parent:IsA("Attachment") then
+        promptPosition = parent.WorldPosition
+    elseif parent:IsA("Model") then
+        local pivot = parent:GetPivot()
+        promptPosition = pivot.Position
+    end
+
+    if not promptPosition then
+        return false
+    end
+
+    return (root.Position - promptPosition).Magnitude <= (prompt.MaxActivationDistance + 0.25)
+end
+
+local function applyPromptMode(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") then
+        return
+    end
+
+    if originalPromptHoldDuration[prompt] == nil then
+        originalPromptHoldDuration[prompt] = prompt.HoldDuration
+    end
+
+    if instantPromptEnabled then
+        prompt.HoldDuration = 0
+    else
+        prompt.HoldDuration = originalPromptHoldDuration[prompt]
+    end
+end
+
+local function releasePromptInput(prompt)
+    pcall(function()
+        prompt:InputHoldEnd()
+    end)
+end
+
+local function activatePrompt(prompt)
+    if not isPromptUsable(prompt) then
+        return
+    end
+
+    applyPromptMode(prompt)
+
+    -- Prefer an executor-provided prompt trigger when present; otherwise
+    -- use Roblox's ProximityPrompt hold API so every ProximityPrompt is handled
+    -- by ClassName rather than by a hard-coded instance name.
+    local firePrompt = rawget(getgenv(), "fireproximityprompt")
+    if type(firePrompt) == "function" then
+        local fired = pcall(function()
+            firePrompt(prompt)
+        end)
+        if fired then
+            return
+        end
+    end
+
+    pcall(function()
+        prompt:InputHoldBegin()
+    end)
+
+    if prompt.HoldDuration <= 0 then
+        task.defer(function()
+            releasePromptInput(prompt)
+        end)
+    else
+        task.delay(prompt.HoldDuration + 0.03, function()
+            releasePromptInput(prompt)
+        end)
+    end
+end
+
+local function refreshAllPrompts()
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            applyPromptMode(obj)
+        end
+    end
+end
+
+local function startPromptSystem()
+    if not promptConnections.promptShown then
+        promptConnections.promptShown = ProximityPromptService.PromptShown:Connect(function(prompt)
+            applyPromptMode(prompt)
+
+            if autoPromptEnabled then
+                task.defer(function()
+                    activatePrompt(prompt)
+                end)
+            end
+        end)
+    end
+
+    if not promptConnections.descendantAdded then
+        promptConnections.descendantAdded = workspace.DescendantAdded:Connect(function(obj)
+            if obj:IsA("ProximityPrompt") then
+                applyPromptMode(obj)
+            end
+
+            if aimbotBushDisabled and isBushObject(obj) then
+                setBushObjectEnabled(obj, false)
+            end
+        end)
+    end
+
+    refreshAllPrompts()
+end
+
+startPromptSystem()
+
 createCategory("Config", "Player", "102791662357524")
 
 createOption("Low Mode", false, "Config", function(state)
@@ -4495,6 +4635,26 @@ createOption("Anti AFK", true, "Config", function()
     -- generate a constant stream of synthetic input that can make ESP/UI blink.
 end)
 
+createOption("Instant Prompt", false, "Config", function(state)
+    instantPromptEnabled = state
+    refreshAllPrompts()
+end)
+
+createOption("Auto Prompt", false, "Config", function(state)
+    autoPromptEnabled = state
+    if state then
+        refreshAllPrompts()
+        for _, prompt in ipairs(workspace:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") and prompt.Enabled and isPromptUsable(prompt) then
+                task.defer(activatePrompt, prompt)
+            end
+        end
+    end
+end)
+createOption("Enable Shift Lock", false, "Config", function(state)
+    getgenv().ShiftLockEnabled = state
+end)
+
 createInfoBox("By: Cleiton10HDx", "Script created by this user.", "Credits", false)
 createInfoBox("Discord", "My Discord Server", "Credits", true, "https://discord.gg/72P6NhC5Pf")
 
@@ -4509,7 +4669,9 @@ updateSearchFilter = function()
             local headerKey = categoryHeaderKeys[element]
             local categoryKey = elementCategoryMap[element]
 
-            if isSearching then
+            if hiddenOptionNames[elementName] then
+                element.Visible = false
+            elseif isSearching then
                 if headerKey then
                     element.Visible = false
                 elseif searchOnlyElements[element] then
