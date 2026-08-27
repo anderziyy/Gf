@@ -7,7 +7,6 @@ local VirtualUser = game:GetService("VirtualUser")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
-local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local BASE_VIEWPORT_SIZE = Vector2.new(1600, 720)
 
@@ -4437,9 +4436,6 @@ createColorOption("Main", "ESPBoxColor", "Box Color", DEFAULT_ESP_BOX_COLOR, fun
     end
 end)
 
--- Proximity prompt system removed - options were not working correctly
-
-
 createCategory("Config", "Player", "102791662357524")
 
 createOption("Low Mode", false, "Config", function(state)
@@ -4497,10 +4493,6 @@ end
 createOption("Anti AFK", true, "Config", function()
     -- The actual anti-idle handler below is event driven, so it does not
     -- generate a constant stream of synthetic input that can make ESP/UI blink.
-end)
-
-createOption("Enable Shift Lock", false, "Config", function(state)
-    getgenv().ShiftLockEnabled = state
 end)
 
 createInfoBox("By: Cleiton10HDx", "Script created by this user.", "Credits", false)
